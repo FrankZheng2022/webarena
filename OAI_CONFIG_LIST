@@ -1,0 +1,30 @@
+[   
+    {
+        "model": "gpt-4",
+        "api_key": "276c20d51ad74c6c9e525bc1bec2431b",
+        "base_url": "https://gcrgpt4aoai8.openai.azure.com/",
+        "api_type": "azure",
+        "api_version": "2024-02-01"
+    },
+    {
+        "model": "gpt-4",
+        "api_key": "b4c85f859a994432a6df410cfae45397",
+        "base_url": "https://gcrgpt4aoai8c.openai.azure.com/",
+        "api_type": "azure",
+        "api_version": "2024-02-01"
+    },
+    {
+        "model": "gpt-4",
+        "api_key": "31ccbcad57ba473bb57f1a5f4b57bc74",
+        "base_url": "https://gcraoai8sw1.openai.azure.com/",
+        "api_type": "azure",
+        "api_version": "2024-02-01"
+    },
+    {
+        "model": "gpt-4",
+        "api_key": "0f9da48052914823a0d6b1993dfdf9ee",
+        "base_url": "https://gcraoai8sw2.openai.azure.com/",
+        "api_type": "azure",
+        "api_version": "2024-02-01"
+    }
+]

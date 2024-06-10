@@ -30,6 +30,8 @@ from .utils import (
     png_bytes_to_numpy,
 )
 
+import os
+
 
 @dataclass
 class PlaywrightScript:
@@ -151,6 +153,7 @@ class ScriptBrowserEnv(Env[dict[str, Observation], Action]):
             start_urls = start_url.split(" |AND| ")
             for url in start_urls:
                 page = self.context.new_page()
+                page.add_init_script(path=os.path.join(os.path.abspath(os.path.dirname(__file__)), "page_script.js"))
                 client = page.context.new_cdp_session(
                     page
                 )  # talk to chrome devtools
