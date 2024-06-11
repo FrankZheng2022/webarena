@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+OAI_CONFIG_LIST
 
 # C extensions
 *.so
