@@ -1126,8 +1126,11 @@ def execute_action(
             # TODO[shuyanzh]: order is temp now
             if action["element_id"]:
                 element_id = action["element_id"]
-                element_center = obseration_processor.get_element_center(element_id)  # type: ignore[attr-defined]
-                execute_mouse_click(element_center[0], element_center[1], page)
+                x = action['pos'][0] / page.viewport_size["width"]
+                y = action['pos'][1] / page.viewport_size["height"]
+                execute_mouse_click(x, y, page)
+                # element_center = obseration_processor.get_element_center(element_id)  # type: ignore[attr-defined]
+                # execute_mouse_click(element_center[0], element_center[1], page)
             elif action["element_role"] and action["element_name"]:
                 element_role = int(action["element_role"])
                 element_name = action["element_name"]
