@@ -63,6 +63,22 @@ def fill_id(page, identifier, value):
     target.fill(value)
     page.keyboard.press("Enter")
 
+def scroll_id(page, identifier, direction):
+    page.evaluate(
+        f"""
+    (function() {{
+        let elm = document.querySelector("[__elementId='{identifier}']");
+        if (elm) {{
+            if ("{direction}" == "up") {{
+                elm.scrollTop = Math.max(0, elm.scrollTop - elm.clientHeight);
+            }}
+            else {{
+                elm.scrollTop = Math.min(elm.scrollHeight - elm.clientHeight, elm.scrollTop + elm.clientHeight);
+            }}
+        }}
+    }})();
+"""
+    )
 
 ### A master agent that conditioned on the image input and task instruction, output the high-level plan/instruction
 ### Question for us: What could be learnable parameters? (Maybe this master agent's System prompt)
@@ -118,15 +134,15 @@ class MultimodalWebSurferAgent:
                 actions = ["'click'"]
                 if rects[r]["role"] in ["textbox", "searchbox", "search"]:
                     actions = ["'type'"]
-                # if rects[r]["v-scrollable"]:
-                #     actions.append("'scroll_up'")
-                #     actions.append("'scroll_down'")
+                if rects[r]["v-scrollable"]:
+                    actions.append("'scroll_up'")
+                    actions.append("'scroll_down'")
                 actions = "[" + ",".join(actions) + "]"
 
                 text_labels += f"""
                 {{ "id": {r}, "aria-role": "{rects[r]['role']}", "html_tag": "{rects[r]['tag_name']}", "actions": "{actions}", "name": "{rects[r]['aria-name']}" }},"""
 
-        mask_hint = f"""When identifying the item on the browser, tote that the number (id) of the web element is shown on the top right corner of the masked bounding box instead of being at the bottom. Also, please pay attention to the colors. The color of the element id should be the same as the color of the masked bounding box."""
+        # mask_hint = f"""When identifying the item on the browser, tote that the number (id) of the web element is shown on the top right corner of the masked bounding box instead of being at the bottom. Also, please pay attention to the colors. The color of the element id should be the same as the color of the masked bounding box."""
 
         ### Prepare the final prompt
         text_prompt = f"""
@@ -149,25 +165,23 @@ class MultimodalWebSurferAgent:
         TARGET: 
         ACTION: stop  
         ARGUMENT: <answer to the user's intent if it is a question, else leave it empty>
-        
-        {mask_hint}
         """.strip()
 
         action_response = call_vlm(text_prompt, image_path='images/som_screenshot.png', verbose=verbose)
-        action = self.parse_action(page, rects, action_response, task_config_file=None)
-        return action
+        page, action, feedback = self.parse_action(page, rects, action_response, task_config_file=None)
+        return page, action, feedback
 
     def parse_action(self, page, rects, action_response, task_config_file=None):
 
-        target, argument = None, None
+        target, target_name, argument = None, None, None
         m = re.search(r"TARGET:\s*(\d+)", action_response)
         if m:
             target = m.group(1).strip()
 
             # # Non-critical. Mainly for pretty logs
-            # target_name = rects.get(target, {}).get("aria-name")
-            # if target_name:
-            #     target_name = target_name.strip()
+            target_name = rects.get(target, {}).get("aria-name")
+            if target_name:
+                target_name = target_name.strip()
 
         action = None
         m = re.search(r"\nACTION:\s*(.*?)\n", action_response)
@@ -180,14 +194,13 @@ class MultimodalWebSurferAgent:
 
         try:
             if target == str(MARK_ID_ADDRESS_BAR) and argument:
-                #action_description = f"I typed '{argument}' into the browser address bar."
                 feedback = ""
                 if not argument.startswith(("https://", "http://", "file://")):
                     argument = "https://" + argument
                 try:
                     action = create_goto_url_action(argument)
                     page.goto(argument)
-                    feedback = f"Successfully navigating to new website, url:{argument}"
+                    feedback = f"I typed '{argument}' into the browser address bar."
                 except ValueError as e:
                     feedback = f"Errors when loading website {argument}, getting error message:{str(e)}"
                     return page, action, feedback
@@ -196,11 +209,16 @@ class MultimodalWebSurferAgent:
                 feedback = "Going backward one page"
             elif target == str(MARK_ID_PAGE_UP):
                 action = create_scroll_action(direction='up')
-                feedback = "Scrolling the page up"
+                feedback = "I scrolled up the page up"
             elif target == str(MARK_ID_PAGE_DOWN):
                 action = create_scroll_action(direction='down')
-                feedback = "Scrolling the page down"
+                feedback = "I scrolled down one screen in the browser."
             elif action == "click":
+                if target_name:
+                    action_description = f"I clicked '{target_name}'."
+                else:
+                    action_description = "I clicked the control."
+
                 action = create_click_action(element_id=target)
                 target  = page.locator(f"[__elementId='{target}']")
                 try:
@@ -208,7 +226,7 @@ class MultimodalWebSurferAgent:
                     feedback = f"Clicking element {target}"
                 except:
                     action = create_none_action()
-                    feedback = f"Element {target} doesn't exist! No element {target} to click!"
+                    feedback = f"Element {target_name} (id: {target}) doesn't exist! No element to click!"
                     return page, action, feedback
                 box = target.bounding_box()
                 try:
@@ -226,7 +244,10 @@ class MultimodalWebSurferAgent:
                 # See if it exists
                 try:
                     target.wait_for(timeout=100)
-                    feedback = f"Typing {argument if argument else ''} into element {target}"
+                    if target_name:
+                        feedback = f"I typed '{argument}' into '{target_name}'."
+                    else:
+                        feedback = f"I input '{argument}'."
                 except TimeoutError:
                     action = create_none_action()
                     feedback = f"Element {target} doesn't exist! No element {target} to type!"
@@ -235,10 +256,28 @@ class MultimodalWebSurferAgent:
                 target.focus()
                 target.fill(argument if argument else "")
                 page.keyboard.press("Enter")
+            elif action == "scroll_up":
+                if target_name:
+                    feedback = f"I scrolled '{target_name}' down."
+                else:
+                    feedback = "I scrolled the control down."
+                try:
+                    scroll_id(page, target, "up")
+                except:
+                    feedback = f"The element {target_name} with id {target} is not scrollable." 
+            elif action == "scroll_down":
+                if target_name:
+                    feedback = f"I scrolled '{target_name}' down."
+                else:
+                    feedback = "I scrolled the control down."
+                try:
+                    scroll_id(page, target, "down")
+                except:
+                    feedback = f"The element {target_name} with id {target} is not scrollable." 
 
             elif action == 'stop':
                 action = create_stop_action(argument)
-                evaluate(argument, task_config_file)
+                feedback = evaluate(argument, task_config_file)
             else:
                 raise ValueError
         except ValueError as e:
@@ -247,4 +286,4 @@ class MultimodalWebSurferAgent:
 
 
 
-        return action, feedback, page
+        return page, action, feedback
