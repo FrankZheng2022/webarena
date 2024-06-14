@@ -4,7 +4,9 @@ from state_of_mark import add_state_of_mark
 import os
 import re
 from browser_env.actions import create_goto_url_action, create_go_back_action, create_scroll_action,\
-                                         create_click_action, create_type_action, create_stop_action
+                                create_none_action, create_click_action, create_type_action, create_stop_action
+import time
+from eval import evaluate
 
 MARK_ID_ADDRESS_BAR = 0
 MARK_ID_BACK = 1
@@ -12,6 +14,9 @@ MARK_ID_RELOAD = 2
 MARK_ID_SEARCH_BAR = 3
 MARK_ID_PAGE_UP = 4
 MARK_ID_PAGE_DOWN = 5
+
+VIEWPORT_HEIGHT = 900
+VIEWPORT_WIDTH = 1440
 
 def get_interactive_rects(page):
     try:
@@ -37,6 +42,28 @@ def get_visual_viewport(page):
         pass
     return page.evaluate("MultimodalWebSurfer.getVisualViewport();")
 
+def on_new_page(page):
+    page.set_viewport_size({"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT})
+    time.sleep(0.2)
+    page.add_init_script(path=os.path.join(os.path.abspath(os.path.dirname(__file__)), "page_script.js"))
+    page.wait_for_load_state()
+    return
+
+def fill_id(page, identifier, value):
+    target = page.locator(f"[__elementId='{identifier}']")
+
+    # See if it exists
+    try:
+        target.wait_for(timeout=100)
+    except TimeoutError:
+        raise ValueError("No such element.")
+
+    # Fill it
+    target.focus()
+    target.fill(value)
+    page.keyboard.press("Enter")
+
+
 ### A master agent that conditioned on the image input and task instruction, output the high-level plan/instruction
 ### Question for us: What could be learnable parameters? (Maybe this master agent's System prompt)
 class MultimodalWebSurferAgent:
@@ -47,7 +74,7 @@ class MultimodalWebSurferAgent:
     ### obs: current observation
     ### page: current webpage
     ### instructions: high-level instructions/plans provided by the users
-    def act(self, obs, page, intent, instruction, verbose=True):
+    def act(self, obs, page, intent, instruction, verbose=True, task_config_file=None):
         rects = get_interactive_rects(page)
         focused = get_focused_rect_id(page)
         name = rects.get(focused, {}).get("aria-name", "")
@@ -84,7 +111,7 @@ class MultimodalWebSurferAgent:
         if (viewport["pageTop"] + viewport["height"] + 5) < viewport["scrollHeight"]:
             text_labels += f"""
         {{ "id": {MARK_ID_PAGE_DOWN}, "aria-role": "scrollbar", "html_tag": "button", "actions": ["click", "scroll_down"], "name": "browser scroll down control" }},"""
-
+        
         # Everything visible
         for r in visible_rects:
             if r in rects:
@@ -96,9 +123,10 @@ class MultimodalWebSurferAgent:
                 #     actions.append("'scroll_down'")
                 actions = "[" + ",".join(actions) + "]"
 
-        text_labels += f"""
-        {{ "id": {r}, "aria-role": "{rects[r]['role']}", "html_tag": "{rects[r]['tag_name']}", "actions": "{actions}", "name": "{rects[r]['aria-name']}" }},"""
+                text_labels += f"""
+                {{ "id": {r}, "aria-role": "{rects[r]['role']}", "html_tag": "{rects[r]['tag_name']}", "actions": "{actions}", "name": "{rects[r]['aria-name']}" }},"""
 
+        mask_hint = f"""When identifying the item on the browser, tote that the number (id) of the web element is shown on the top right corner of the masked bounding box instead of being at the bottom. Also, please pay attention to the colors. The color of the element id should be the same as the color of the masked bounding box."""
 
         ### Prepare the final prompt
         text_prompt = f"""
@@ -107,11 +135,12 @@ class MultimodalWebSurferAgent:
         {text_labels}
         ]
         {focused_hint}
-        You are to respond to the user's overall intent as well as the detailed instructions by selecting a browser action to perform.
+        You are to respond to the user's overall intent as well as the detailed instructions by selecting one next browser action to perform. 
         User's Intent:
         {intent}
         Instructions:
         {instruction}
+        
         Please output the appropriate action in the following format:
         TARGET:   <id of interactive element.>
         ACTION:   <One single action from the element's list of actions>
@@ -120,15 +149,17 @@ class MultimodalWebSurferAgent:
         TARGET: 
         ACTION: stop  
         ARGUMENT: <answer to the user's intent if it is a question, else leave it empty>
+        
+        {mask_hint}
         """.strip()
 
         action_response = call_vlm(text_prompt, image_path='images/som_screenshot.png', verbose=verbose)
-        action = self.parse_action(page, rects, action_response)
+        action = self.parse_action(page, rects, action_response, task_config_file=None)
         return action
 
-    def parse_action(self, page, rects, action_response):
+    def parse_action(self, page, rects, action_response, task_config_file=None):
 
-        target = None
+        target, argument = None, None
         m = re.search(r"TARGET:\s*(\d+)", action_response)
         if m:
             target = m.group(1).strip()
@@ -150,35 +181,70 @@ class MultimodalWebSurferAgent:
         try:
             if target == str(MARK_ID_ADDRESS_BAR) and argument:
                 #action_description = f"I typed '{argument}' into the browser address bar."
-                self._log_to_console("goto", arg=argument)
-                # Check if the argument starts with a known protocol
+                feedback = ""
                 if not argument.startswith(("https://", "http://", "file://")):
                     argument = "https://" + argument
-                action = create_goto_url_action(argument)
+                try:
+                    action = create_goto_url_action(argument)
+                    page.goto(argument)
+                    feedback = f"Successfully navigating to new website, url:{argument}"
+                except ValueError as e:
+                    feedback = f"Errors when loading website {argument}, getting error message:{str(e)}"
+                    return page, action, feedback
             elif target == str(MARK_ID_BACK):
                 action = create_go_back_action()
+                feedback = "Going backward one page"
             elif target == str(MARK_ID_PAGE_UP):
                 action = create_scroll_action(direction='up')
+                feedback = "Scrolling the page up"
             elif target == str(MARK_ID_PAGE_DOWN):
                 action = create_scroll_action(direction='down')
+                feedback = "Scrolling the page down"
             elif action == "click":
                 action = create_click_action(element_id=target)
                 target  = page.locator(f"[__elementId='{target}']")
                 try:
                     target.wait_for(timeout=100)
-                except TimeoutError:
-                    raise ValueError("No such element to click!")
+                    feedback = f"Clicking element {target}"
+                except:
+                    action = create_none_action()
+                    feedback = f"Element {target} doesn't exist! No element {target} to click!"
+                    return page, action, feedback
                 box = target.bounding_box()
-                action['pos'] = (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                try:
+                    with page.expect_event("popup", timeout=2000) as page_info:
+                        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                    page = page_info.value
+                    on_new_page(page)
+                except:
+                    action = create_none_action()
+                    feedback = "Time out error when clicking element {target}!"
+                    return page, action, feedback
+
             elif action == "type":
-                action = create_type_action(text=argument, element_id=target)
+                target = page.locator(f"[__elementId='{target}']")
+                # See if it exists
+                try:
+                    target.wait_for(timeout=100)
+                    feedback = f"Typing {argument if argument else ''} into element {target}"
+                except TimeoutError:
+                    action = create_none_action()
+                    feedback = f"Element {target} doesn't exist! No element {target} to type!"
+                    return page, action, feedback
+                # Fill it
+                target.focus()
+                target.fill(argument if argument else "")
+                page.keyboard.press("Enter")
+
             elif action == 'stop':
                 action = create_stop_action(argument)
+                evaluate(argument, task_config_file)
             else:
                 raise ValueError
         except ValueError as e:
-            raise e
+            action = create_none_action()
+            feedback = f"Action you choose is invalid!"
 
 
 
-        return action
+        return action, feedback, page

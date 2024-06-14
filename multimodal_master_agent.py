@@ -9,7 +9,7 @@ class MultimodalMasterAgent:
     
     def plan(self, image_obs, image_path='./images/screenshot.png'):
         
-        img = Image.fromarray(image_obs)
-        img.save(image_path)
+        #img = Image.fromarray(image_obs)
+        #img.save(image_path)
         instructions = call_vlm(self.system_prompt, image_path)
         return instructions

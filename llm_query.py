@@ -39,7 +39,7 @@ def call_vlm(prompt, image_path=None, verbose=True):
                 ],
             }
         ],
-        temperature=0.
+        temperature=0.2
     )
     response = response.choices[0].message.content
 
