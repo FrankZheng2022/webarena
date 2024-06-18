@@ -7,6 +7,7 @@ from browser_env.actions import create_goto_url_action, create_go_back_action, c
                                 create_none_action, create_click_action, create_type_action, create_stop_action
 import time
 from eval import evaluate
+import autogen.trace as trace
 
 MARK_ID_ADDRESS_BAR = 0
 MARK_ID_BACK = 1
@@ -90,7 +91,12 @@ class MultimodalWebSurferAgent:
     ### obs: current observation
     ### page: current webpage
     ### instructions: high-level instructions/plans provided by the users
-    def act(self, obs, page, intent, instruction, verbose=True, task_config_file=None):
+    #@trace.bundle(n_outputs=3)
+    def act(self, page, intent, instruction, verbose=True, step=0, task_config_file=None):
+        """
+            Given the observation (page), user's intent, and the instruction sent from master agent,
+            output a concrete action to execute.
+        """
         rects = get_interactive_rects(page)
         focused = get_focused_rect_id(page)
         name = rects.get(focused, {}).get("aria-name", "")
@@ -109,7 +115,7 @@ class MultimodalWebSurferAgent:
 
         som_screenshot, visible_rects = add_state_of_mark(page.screenshot(), rects)
         som_screenshot = som_screenshot.resize((1224, 765))
-        som_screenshot.save('images/som_screenshot.png')
+        som_screenshot.save(f'images/som_screenshot_{step}.png')
 
 
         # Include all the static elements
@@ -161,15 +167,11 @@ class MultimodalWebSurferAgent:
         TARGET:   <id of interactive element.>
         ACTION:   <One single action from the element's list of actions>
         ARGUMENT: <The action' argument, if any. For example, the text to type if the action is typing>
-        Additionally, you could also choose the following stop actions:
-        TARGET: 
-        ACTION: stop  
-        ARGUMENT: <answer to the user's intent if it is a question, else leave it empty>
-        """.strip()
+        """
 
-        action_response = call_vlm(text_prompt, image_path='images/som_screenshot.png', verbose=verbose)
+        action_response = call_vlm(text_prompt, f'images/som_screenshot_{step}.png', verbose=verbose)
         page, action, feedback = self.parse_action(page, rects, action_response, task_config_file=None)
-        return page, action, feedback
+        return page, action, feedback 
 
     def parse_action(self, page, rects, action_response, task_config_file=None):
 
@@ -188,7 +190,7 @@ class MultimodalWebSurferAgent:
         if m:
             action = m.group(1).strip().lower()
 
-        m = re.search(r"\nARGUMENT:\s*(.*?)\n", action_response)
+        m = re.search(r"ARGUMENT:\s*(.*)", action_response)
         if m:
             argument = m.group(1).strip()
 
@@ -198,32 +200,34 @@ class MultimodalWebSurferAgent:
                 if not argument.startswith(("https://", "http://", "file://")):
                     argument = "https://" + argument
                 try:
-                    action = create_goto_url_action(argument)
+                    #action = create_goto_url_action(argument)
                     page.goto(argument)
                     feedback = f"I typed '{argument}' into the browser address bar."
-                except ValueError as e:
-                    feedback = f"Errors when loading website {argument}, getting error message:{str(e)}"
+                except:
+                    feedback = f"Errors when loading website {argument}"
                     return page, action, feedback
             elif target == str(MARK_ID_BACK):
-                action = create_go_back_action()
-                feedback = "Going backward one page"
+                #action = create_go_back_action()
+                page.go_back()
+                feedback = "I clicked the browser back button."
             elif target == str(MARK_ID_PAGE_UP):
-                action = create_scroll_action(direction='up')
+                #action = create_scroll_action(direction='up')
+                page.evaluate(f"window.scrollBy(0, {VIEWPORT_HEIGHT-50});")
                 feedback = "I scrolled up the page up"
             elif target == str(MARK_ID_PAGE_DOWN):
-                action = create_scroll_action(direction='down')
+                #action = create_scroll_action(direction='down')
+                page.evaluate(f"window.scrollBy(0, -{VIEWPORT_HEIGHT-50});")
                 feedback = "I scrolled down one screen in the browser."
             elif action == "click":
                 if target_name:
-                    action_description = f"I clicked '{target_name}'."
+                    feedback = f"I clicked '{target_name}'."
                 else:
-                    action_description = "I clicked the control."
+                    feedback = "I clicked the control."
 
-                action = create_click_action(element_id=target)
+                #action = create_click_action(element_id=target)
                 target  = page.locator(f"[__elementId='{target}']")
                 try:
                     target.wait_for(timeout=100)
-                    feedback = f"Clicking element {target}"
                 except:
                     action = create_none_action()
                     feedback = f"Element {target_name} (id: {target}) doesn't exist! No element to click!"
@@ -236,7 +240,7 @@ class MultimodalWebSurferAgent:
                     on_new_page(page)
                 except:
                     action = create_none_action()
-                    feedback = "Time out error when clicking element {target}!"
+                    feedback = f"Time out error when clicking element {target}!"
                     return page, action, feedback
 
             elif action == "type":
@@ -248,9 +252,9 @@ class MultimodalWebSurferAgent:
                         feedback = f"I typed '{argument}' into '{target_name}'."
                     else:
                         feedback = f"I input '{argument}'."
-                except TimeoutError:
+                except:
                     action = create_none_action()
-                    feedback = f"Element {target} doesn't exist! No element {target} to type!"
+                    feedback = f"Element {target_name} (id: {target}) doesn't exist! No element {target} to type!"
                     return page, action, feedback
                 # Fill it
                 target.focus()
@@ -276,8 +280,9 @@ class MultimodalWebSurferAgent:
                     feedback = f"The element {target_name} with id {target} is not scrollable." 
 
             elif action == 'stop':
-                action = create_stop_action(argument)
-                feedback = evaluate(argument, task_config_file)
+                #action = create_stop_action(argument)
+                score = evaluate(argument, task_config_file)
+                feedback = f'The score of your answer is {score} (0. is completely wrong, and 1.0 means correct.)'
             else:
                 raise ValueError
         except ValueError as e:

@@ -4,19 +4,41 @@ Functions to query llm (GPT-4) or vlm (GPT-4o)
 
 import autogen
 import base64
+import io
+from PIL import Image
 
 # Function to encode the image
 def encode_image(image_path):
+    """
+    Image can be a bytes string, a Binary file-like stream, or PIL Image.
+    """
     with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
+        image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+    # image_bytes = image
+    # if isinstance(image, Image.Image):
+    #     image_buffer = io.BytesIO()
+    #     image.save(image_buffer, format="PNG")
+    #     image_bytes = image_buffer.getvalue()
+    # elif isinstance(image, io.BytesIO):
+    #     image_bytes = image_buffer.getvalue()
+    # elif isinstance(image, io.BufferedIOBase):
+    #     image_bytes = image.read()
 
-def call_vlm(prompt, image_path=None, verbose=True):
+    # image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+    return f"data:image/png;base64,{image_base64}"
+
+# # Function to encode the image
+# def encode_image(image_path):
+#     with open(image_path, "rb") as image_file:
+#         return base64.b64encode(image_file.read()).decode('utf-8')
+
+def call_vlm(prompt, image=None, verbose=True):
     """Call the VLM with a prompt and image path and return the response."""
     if verbose:
         print("Prompt\n", prompt)
 
     # Getting the base64 string
-    base64_image = encode_image(image_path)
+    image_encode = encode_image(image)
 
     vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST_VISION"))
     response = vlm.create(
@@ -31,7 +53,7 @@ def call_vlm(prompt, image_path=None, verbose=True):
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
+                            "url": image_encode
                         }
                     }
 
