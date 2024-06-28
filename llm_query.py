@@ -6,6 +6,7 @@ import autogen
 import base64
 import io
 from PIL import Image
+import copy
 
 # Function to encode the image
 def encode_image(image_path):
@@ -27,46 +28,29 @@ def encode_image(image_path):
     # image_base64 = base64.b64encode(image_bytes).decode("utf-8")
     return f"data:image/png;base64,{image_base64}"
 
-# # Function to encode the image
-# def encode_image(image_path):
-#     with open(image_path, "rb") as image_file:
-#         return base64.b64encode(image_file.read()).decode('utf-8')
-
-def call_vlm(prompt, image=None, verbose=True):
+def call_vlm(messages):
     """Call the VLM with a prompt and image path and return the response."""
-    if verbose:
-        print("Prompt\n", prompt)
+    
+    def replace_image(messages):
+        for message in messages:
+            content = message['content']
+            if isinstance(content, list):
+                for item in content:
+                    if item['type'] == 'image_url':
+                        item['image_url'] = '0'
+        return messages
+    print("Messages:\n", replace_image(copy.deepcopy(messages)))
 
     # Getting the base64 string
-    image_encode = encode_image(image)
+    #image_encode = encode_image(image)
 
     vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST_VISION"))
     response = vlm.create(
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": image_encode
-                        }
-                    }
-
-
-                ],
-            }
-        ],
+        messages=messages,
         temperature=0.2
     )
     response = response.choices[0].message.content
-
-    if verbose:
-        print(f"vlm's ouput:\n{response}")
+    print(f"vlm's ouput:\n{response}")
     return response
 
 def call_llm(prompt, verbose=True):
@@ -89,9 +73,6 @@ def call_llm(prompt, verbose=True):
         ]
     )
     response = response.choices[0].message.content
-
-    if verbose:
-        print(response)
     return response
 
 # prompt = "You are a general-purpose AI assistant and can handle many questions but you don't have access to a web browser. However, the user you are talking to does have a browser, and you can see the screen. Provide short direct instructions to them. User's Question: Checkout merge requests assigned to me"

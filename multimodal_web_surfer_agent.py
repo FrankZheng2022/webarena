@@ -7,7 +7,9 @@ from browser_env.actions import create_goto_url_action, create_go_back_action, c
                                 create_none_action, create_click_action, create_type_action, create_stop_action
 import time
 from eval import evaluate
-import autogen.trace as trace
+import io
+from PIL import Image
+import base64
 
 MARK_ID_ADDRESS_BAR = 0
 MARK_ID_BACK = 1
@@ -85,17 +87,18 @@ def scroll_id(page, identifier, direction):
 ### Question for us: What could be learnable parameters? (Maybe this master agent's System prompt)
 class MultimodalWebSurferAgent:
     
-    def __init__(self):
-        return 
+    def __init__(self, intent, start_url, site_description_prompt):
+        self.user_intent   = f"""We are visiting the website {start_url} {site_description_prompt}. On this website, please complete the following task:
+                                {intent}"""
     
     ### obs: current observation
     ### page: current webpage
     ### instructions: high-level instructions/plans provided by the users
-    #@trace.bundle(n_outputs=3)
-    def act(self, page, intent, instruction, verbose=True, step=0, task_config_file=None):
+    #@trace.bundle(n_outputs=1)
+    def act(self, histories, page, step=0):
         """
             Given the observation (page), user's intent, and the instruction sent from master agent,
-            output a concrete action to execute.
+            and the timestep of the agent, output a concrete action to execute.
         """
         rects = get_interactive_rects(page)
         focused = get_focused_rect_id(page)
@@ -158,10 +161,6 @@ class MultimodalWebSurferAgent:
         ]
         {focused_hint}
         You are to respond to the user's overall intent as well as the detailed instructions by selecting one next browser action to perform. 
-        User's Intent:
-        {intent}
-        Instructions:
-        {instruction}
         
         Please output the appropriate action in the following format:
         TARGET:   <id of interactive element.>
@@ -169,11 +168,29 @@ class MultimodalWebSurferAgent:
         ARGUMENT: <The action' argument, if any. For example, the text to type if the action is typing>
         """
 
-        action_response = call_vlm(text_prompt, f'images/som_screenshot_{step}.png', verbose=verbose)
-        page, action, feedback = self.parse_action(page, rects, action_response, task_config_file=None)
-        return page, action, feedback 
+        ### Now prepare messages to be passed into gpt-4o
 
-    def parse_action(self, page, rects, action_response, task_config_file=None):
+        #action_response = call_vlm(text_prompt, f'images/som_screenshot_{step}.png')
+        
+        messages = [{"content":self.user_intent, "role": "assistant"}]
+        for item in histories:
+            messages.append({"content":item[0], "role": "user"})
+            messages.append({"content":item[1], "role": "assistant"})
+
+        with open(f'images/som_screenshot_{step}.png', "rb") as image_file:
+            image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+        content = [{"type": "text", "text":text_prompt},
+                   {"type": "image_url", "image_url":{"url":f"data:image/png;base64,{image_base64}"}}, 
+                  ]  
+        messages.append({"content":content, "role": "user"})
+        action_response = call_vlm(messages) 
+
+        ### execute the action
+        next_obs = self.parse_action(page, rects, action_response)
+
+        return next_obs
+        
+    def parse_action(self, page, rects, action_response):
 
         target, target_name, argument = None, None, None
         m = re.search(r"TARGET:\s*(\d+)", action_response)
@@ -186,109 +203,116 @@ class MultimodalWebSurferAgent:
                 target_name = target_name.strip()
 
         action = None
-        m = re.search(r"\nACTION:\s*(.*?)\n", action_response)
+        m = re.search(r"ACTION:\s*(.*?)\n", action_response)
         if m:
             action = m.group(1).strip().lower()
+        else:
+            m = re.search(r"ACTION:\s*(\w+)", action_response)
+            if m:
+                action = m.group(1).strip().lower()
+            else:
+                print('Action not found!')
+                raise Exception
 
         m = re.search(r"ARGUMENT:\s*(.*)", action_response)
         if m:
             argument = m.group(1).strip()
 
-        try:
-            if target == str(MARK_ID_ADDRESS_BAR) and argument:
-                feedback = ""
-                if not argument.startswith(("https://", "http://", "file://")):
-                    argument = "https://" + argument
-                try:
-                    #action = create_goto_url_action(argument)
-                    page.goto(argument)
-                    feedback = f"I typed '{argument}' into the browser address bar."
-                except:
-                    feedback = f"Errors when loading website {argument}"
-                    return page, action, feedback
-            elif target == str(MARK_ID_BACK):
-                #action = create_go_back_action()
-                page.go_back()
-                feedback = "I clicked the browser back button."
-            elif target == str(MARK_ID_PAGE_UP):
-                #action = create_scroll_action(direction='up')
-                page.evaluate(f"window.scrollBy(0, {VIEWPORT_HEIGHT-50});")
-                feedback = "I scrolled up the page up"
-            elif target == str(MARK_ID_PAGE_DOWN):
-                #action = create_scroll_action(direction='down')
-                page.evaluate(f"window.scrollBy(0, -{VIEWPORT_HEIGHT-50});")
-                feedback = "I scrolled down one screen in the browser."
-            elif action == "click":
-                if target_name:
-                    feedback = f"I clicked '{target_name}'."
-                else:
-                    feedback = "I clicked the control."
-
-                #action = create_click_action(element_id=target)
-                target  = page.locator(f"[__elementId='{target}']")
-                try:
-                    target.wait_for(timeout=100)
-                except:
-                    action = create_none_action()
-                    feedback = f"Element {target_name} (id: {target}) doesn't exist! No element to click!"
-                    return page, action, feedback
-                box = target.bounding_box()
-                try:
-                    with page.expect_event("popup", timeout=2000) as page_info:
-                        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-                    page = page_info.value
-                    on_new_page(page)
-                except:
-                    action = create_none_action()
-                    feedback = f"Time out error when clicking element {target}!"
-                    return page, action, feedback
-
-            elif action == "type":
-                target = page.locator(f"[__elementId='{target}']")
-                # See if it exists
-                try:
-                    target.wait_for(timeout=100)
-                    if target_name:
-                        feedback = f"I typed '{argument}' into '{target_name}'."
-                    else:
-                        feedback = f"I input '{argument}'."
-                except:
-                    action = create_none_action()
-                    feedback = f"Element {target_name} (id: {target}) doesn't exist! No element {target} to type!"
-                    return page, action, feedback
-                # Fill it
-                target.focus()
-                target.fill(argument if argument else "")
-                page.keyboard.press("Enter")
-            elif action == "scroll_up":
-                if target_name:
-                    feedback = f"I scrolled '{target_name}' down."
-                else:
-                    feedback = "I scrolled the control down."
-                try:
-                    scroll_id(page, target, "up")
-                except:
-                    feedback = f"The element {target_name} with id {target} is not scrollable." 
-            elif action == "scroll_down":
-                if target_name:
-                    feedback = f"I scrolled '{target_name}' down."
-                else:
-                    feedback = "I scrolled the control down."
-                try:
-                    scroll_id(page, target, "down")
-                except:
-                    feedback = f"The element {target_name} with id {target} is not scrollable." 
-
-            elif action == 'stop':
-                #action = create_stop_action(argument)
-                score = evaluate(argument, task_config_file)
-                feedback = f'The score of your answer is {score} (0. is completely wrong, and 1.0 means correct.)'
+        #try:
+        if target == str(MARK_ID_ADDRESS_BAR) and argument:
+            feedback = ""
+            if not argument.startswith(("https://", "http://", "file://")):
+                argument = "https://" + argument
+            try:
+                #action = create_goto_url_action(argument)
+                page.goto(argument)
+                feedback = f"I typed '{argument}' into the browser address bar."
+            except:
+                feedback = f"Errors when loading website {argument}"
+                return {"page":page, "action":action,"feedback": feedback,}
+        elif target == str(MARK_ID_BACK):
+            #action = create_go_back_action()
+            page.go_back()
+            feedback = "I clicked the browser back button."
+        elif target == str(MARK_ID_PAGE_UP):
+            #action = create_scroll_action(direction='up')
+            page.evaluate(f"window.scrollBy(0, {VIEWPORT_HEIGHT-50});")
+            feedback = "I scrolled up the page up"
+        elif target == str(MARK_ID_PAGE_DOWN):
+            #action = create_scroll_action(direction='down')
+            page.evaluate(f"window.scrollBy(0, -{VIEWPORT_HEIGHT-50});")
+            feedback = "I scrolled down one screen in the browser."
+        elif action == "click":
+            if target_name:
+                feedback = f"I clicked '{target_name}'."
             else:
-                raise ValueError
-        except ValueError as e:
-            action = create_none_action()
-            feedback = f"Action you choose is invalid!"
+                feedback = "I clicked the control."
+
+            #action = create_click_action(element_id=target)
+            target  = page.locator(f"[__elementId='{target}']")
+            try:
+                target.wait_for(timeout=100)
+            except:
+                action = create_none_action()
+                feedback = f"Element {target_name} (id: {target}) doesn't exist! No element to click!"
+                return {"page":page, "action":action,"feedback": feedback,}
+            box = target.bounding_box()
+            try:
+                with page.expect_event("popup", timeout=1000) as page_info:
+                    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                page = page_info.value
+                on_new_page(page)
+            except:
+                action = create_none_action()
+                #feedback = f"Time out error when clicking element {target}!"
+                return {"page":page, "action":action,"feedback": feedback,}
+
+        elif action == "type":
+            target = page.locator(f"[__elementId='{target}']")
+            # See if it exists
+            try:
+                target.wait_for(timeout=100)
+                if target_name:
+                    feedback = f"I typed '{argument}' into '{target_name}'."
+                else:
+                    feedback = f"I input '{argument}'."
+            except:
+                action = create_none_action()
+                feedback = f"Element {target_name} (id: {target}) doesn't exist! No element {target} to type!"
+                return {"page":page, "action":action,"feedback": feedback,}
+            # Fill it
+            target.focus()
+            target.fill(argument if argument else "")
+            page.keyboard.press("Enter")
+        elif action == "scroll_up":
+            if target_name:
+                feedback = f"I scrolled '{target_name}' down."
+            else:
+                feedback = "I scrolled the control down."
+            try:
+                scroll_id(page, target, "up")
+            except:
+                feedback = f"The element {target_name} with id {target} is not scrollable." 
+        elif action == "scroll_down":
+            if target_name:
+                feedback = f"I scrolled '{target_name}' down."
+            else:
+                feedback = "I scrolled the control down."
+            try:
+                scroll_id(page, target, "down")
+            except:
+                feedback = f"The element {target_name} with id {target} is not scrollable." 
+
+        # elif action == 'stop':
+        #     #action = create_stop_action(argument)
+        #     score = evaluate(argument, task_config_file)
+        #     feedback = f'The score of your answer is {score} (0. is completely wrong, and 1.0 means correct.)'
+        else:
+            raise ValueError("Invalid Action Chosen")
+        # except ValueError as e:
+        #     print(f"Error:{str(e)}")
+        #     action = create_none_action()
+        #     feedback = f"I choose {action_response}. The action I choose is invalid!"
 
 
-
-        return page, action, feedback
+        return {"page":page, "action":action,"feedback": feedback,}
