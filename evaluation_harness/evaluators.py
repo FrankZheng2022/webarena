@@ -26,7 +26,7 @@ from evaluation_harness.helper_functions import (
     shopping_get_sku_latest_review_rating,
 )
 
-Trajectory = list[Union[Action, StateInfo]]
+#Trajectory = list[Union[Action, StateInfo]]
 
 
 class Evaluator(object):
@@ -36,36 +36,36 @@ class Evaluator(object):
     @beartype
     def __call__(
         self,
-        trajectory: Trajectory,
+        answer,
         config_file: Path | str,
         page: Page | PseudoPage,
         client: CDPSession,
     ) -> float:
         raise NotImplementedError
 
-    @staticmethod
-    def get_last_action(trajectory: Trajectory) -> Action:
-        try:
-            # is_bearable(trajectory[-1], Action)
-            last_action = trajectory[-1]
-        except Exception:
-            raise ValueError(
-                "The last element of trajectory should be an action, add a fake stop action if needed"
-            )
+    # @staticmethod
+    # def get_last_action(trajectory: Trajectory) -> Action:
+    #     try:
+    #         # is_bearable(trajectory[-1], Action)
+    #         last_action = trajectory[-1]
+    #     except Exception:
+    #         raise ValueError(
+    #             "The last element of trajectory should be an action, add a fake stop action if needed"
+    #         )
 
-        return last_action  # type: ignore[return-value]
+    #     return last_action  # type: ignore[return-value]
 
-    @staticmethod
-    def get_last_state(trajectory: Trajectory) -> StateInfo:
-        try:
-            # is_bearable(trajectory[-2], StateInfo)
-            last_state = trajectory[-2]
-        except Exception:
-            raise ValueError(
-                "The second last element of trajectory should be a state, add a fake stop action if needed"
-            )
+    # @staticmethod
+    # def get_last_state(trajectory: Trajectory) -> StateInfo:
+    #     try:
+    #         # is_bearable(trajectory[-2], StateInfo)
+    #         last_state = trajectory[-2]
+    #     except Exception:
+    #         raise ValueError(
+    #             "The second last element of trajectory should be a state, add a fake stop action if needed"
+    #         )
 
-        return last_state  # type: ignore[return-value]
+    #     return last_state  # type: ignore[return-value]
 
 
 class StringEvaluator(Evaluator):
@@ -122,7 +122,7 @@ class StringEvaluator(Evaluator):
 
     def __call__(
         self,
-        trajectory: Trajectory,
+        answer,
         config_file: Path | str,
         page: Page | PseudoPage | None = None,
         client: CDPSession | None = None,
@@ -130,8 +130,7 @@ class StringEvaluator(Evaluator):
         with open(config_file, "r") as f:
             configs = json.load(f)
 
-        last_action = self.get_last_action(trajectory)
-        pred = self.clean_answer(last_action["answer"])
+        pred = self.clean_answer(answer)
 
         score = 1.0
         for approach, value in configs["eval"]["reference_answers"].items():
@@ -176,7 +175,7 @@ class URLEvaluator(Evaluator):
     @beartype
     def __call__(
         self,
-        trajectory: Trajectory,
+        answer,
         config_file: Path | str,
         page: Page | PseudoPage,
         client: CDPSession | None = None,
@@ -247,7 +246,7 @@ class HTMLContentEvaluator(Evaluator):
     @beartype
     def __call__(
         self,
-        trajectory: Trajectory,
+        answer,
         config_file: Path | str,
         page: Page | PseudoPage,
         client: CDPSession | None = None,
@@ -340,14 +339,14 @@ class EvaluatorComb:
     @beartype
     def __call__(
         self,
-        trajectory: Trajectory,
+        answer,
         config_file: Path | str,
         page: Page | PseudoPage,
         client: CDPSession,
     ) -> float:
         score = 1.0
         for evaluator in self.evaluators:
-            cur_score = evaluator(trajectory, config_file, page, client)
+            cur_score = evaluator(answer, config_file, page, client)
             score *= cur_score
         return score
 

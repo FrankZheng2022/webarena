@@ -28,7 +28,7 @@ def encode_image(image_path):
     # image_base64 = base64.b64encode(image_bytes).decode("utf-8")
     return f"data:image/png;base64,{image_base64}"
 
-def call_vlm(messages):
+def call_vlm(messages, temperature=0.1):
     """Call the VLM with a prompt and image path and return the response."""
     
     def replace_image(messages):
@@ -39,7 +39,7 @@ def call_vlm(messages):
                     if item['type'] == 'image_url':
                         item['image_url'] = '0'
         return messages
-    print("Messages:\n", replace_image(copy.deepcopy(messages)))
+    #print("Messages:\n", replace_image(copy.deepcopy(messages)))
 
     # Getting the base64 string
     #image_encode = encode_image(image)
@@ -47,30 +47,21 @@ def call_vlm(messages):
     vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST_VISION"))
     response = vlm.create(
         messages=messages,
-        temperature=0.2
+        temperature=temperature
     )
     response = response.choices[0].message.content
-    print(f"vlm's ouput:\n{response}")
+    #print(f"vlm's ouput:\n{response}")
     return response
 
-def call_llm(prompt, verbose=True):
+def call_llm(messages):
     """Call the LLM with a prompt and return the response."""
-    if verbose:
-        print("Prompt\n", prompt)
-
-    vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST"))
-    response = vlm.create(
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ],
-            }
-        ]
+    llm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST"))
+    response = llm.create(
+        messages = messages,
+        temperature=0,
+        max_tokens=768,
+        top_p=1.0,
+        context_length=0,
     )
     response = response.choices[0].message.content
     return response

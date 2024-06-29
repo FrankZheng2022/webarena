@@ -2,7 +2,7 @@
 import json
 from typing import Any
 from urllib.parse import urlparse
-
+import autogen
 import requests
 from playwright.sync_api import CDPSession, Page
 
@@ -14,9 +14,6 @@ from browser_env.env_config import (
     SHOPPING,
     SHOPPING_ADMIN,
     WIKIPEDIA,
-)
-from llms.providers.openai_utils import (
-    generate_from_openai_chat_completion,
 )
 
 
@@ -157,15 +154,13 @@ def llm_fuzzy_match(pred: str, reference: str, question: str) -> float:
         {"role": "system", "content": "You are a helpful assistant"},
         {"role": "user", "content": message},
     ]
-
-    response = generate_from_openai_chat_completion(
-        model="gpt-4-1106-preview",
-        messages=messages,
+    llm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST"))
+    response = llm.create(
+        messages = messages,
         temperature=0,
         max_tokens=768,
         top_p=1.0,
-        context_length=0,
-    ).lower()
+    ).choices[0].message.content.lower()
     if "partially correct" in response or "incorrect" in response:
         return 0.0
     else:
@@ -193,14 +188,13 @@ def llm_ua_match(pred: str, reference: str, question: str) -> float:
         {"role": "user", "content": message},
     ]
 
-    response = generate_from_openai_chat_completion(
-        model="gpt-4-1106-preview",
-        messages=messages,
+    llm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST"))
+    response = llm.create(
+        messages = messages,
         temperature=0,
         max_tokens=768,
         top_p=1.0,
-        context_length=0,
-    ).lower()
+    ).choices[0].message.content.lower()
     if "different" in response:
         return 0.0
     else:
