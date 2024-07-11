@@ -1,4 +1,4 @@
-from llm_query import call_vlm
+from utils.llm_query import call_vlm
 from PIL import Image
 from state_of_mark import add_state_of_mark
 import os
@@ -6,7 +6,7 @@ import re
 from browser_env.actions import create_goto_url_action, create_go_back_action, create_scroll_action,\
                                 create_none_action, create_click_action, create_type_action, create_stop_action
 import time
-from eval import evaluate
+#from eval import evaluate
 import io
 from PIL import Image
 import base64
@@ -87,15 +87,16 @@ def scroll_id(page, identifier, direction):
 ### Question for us: What could be learnable parameters? (Maybe this master agent's System prompt)
 class MultimodalWebSurferAgent:
     
-    def __init__(self, intent, start_url, site_description_prompt):
+    def __init__(self, intent, start_url, site_description_prompt, histories):
         self.user_intent   = f"""We are visiting the website {start_url} {site_description_prompt}. On this website, please complete the following task:
                                 {intent}"""
-    
+        self.histories = histories
+
     ### obs: current observation
     ### page: current webpage
     ### instructions: high-level instructions/plans provided by the users
     #@trace.bundle(n_outputs=1)
-    def act(self, histories, page, step=0):
+    def act(self, page, step=0):
         """
             Given the observation (page), user's intent, and the instruction sent from master agent,
             and the timestep of the agent, output a concrete action to execute.
@@ -173,9 +174,12 @@ class MultimodalWebSurferAgent:
         #action_response = call_vlm(text_prompt, f'images/som_screenshot_{step}.png')
         
         messages = [{"content":self.user_intent, "role": "assistant"}]
-        for item in histories:
-            messages.append({"content":item[0], "role": "user"})
-            messages.append({"content":item[1], "role": "assistant"})
+        for item in self.histories:
+            if item[1] is not None:
+                messages.append({"content":item[0]['content'], "role": "user"})
+                messages.append({"content":item[1]['content'][0]['text'], "role": "assistant"})
+            else:
+                messages.append({"content":item[0]['content'], "role": "user"})
 
         with open(f'images/som_screenshot_{step}.png', "rb") as image_file:
             image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
@@ -187,6 +191,20 @@ class MultimodalWebSurferAgent:
 
         ### execute the action
         next_obs = self.parse_action(page, rects, action_response)
+        
+
+        # viewport = get_visual_viewport(next_obs['page'])
+        # percent_visible = int(viewport["height"] * 100 / viewport["scrollHeight"])
+        # percent_scrolled = int(viewport["pageTop"] * 100 / viewport["scrollHeight"])
+        # if percent_scrolled < 1:  # Allow some rounding error
+        #     position_text = "at the top of the page"
+        # elif percent_scrolled + percent_visible >= 99:  # Allow some rounding error
+        #     position_text = "at the bottom of the page"
+        # else:
+        #     position_text = str(percent_scrolled) + "% down from the top of the page"
+        # action_description = f"{next_obs['feedback']} Here is a screenshot of [{page.title()}]({page.url}). The viewport shows {percent_visible}% of the webpage, and is positioned {position_text}.".strip()
+        # self.histories[-1][1] = {"content": action_description}
+
 
         return next_obs
         
@@ -256,6 +274,7 @@ class MultimodalWebSurferAgent:
                 action = create_none_action()
                 feedback = f"Element {target_name} (id: {target}) doesn't exist! No element to click!"
                 return {"page":page, "action":action,"feedback": feedback,}
+            target.scroll_into_view_if_needed()
             box = target.bounding_box()
             try:
                 with page.expect_event("popup", timeout=1000) as page_info:
@@ -282,7 +301,12 @@ class MultimodalWebSurferAgent:
                 return {"page":page, "action":action,"feedback": feedback,}
             # Fill it
             target.focus()
-            target.fill(argument if argument else "")
+            try:
+                target.fill(argument if argument else "")
+            except:
+                action = create_none_action()
+                feedback = f"Time out error!"
+                return {"page":page, "action":action,"feedback": feedback,}
             page.keyboard.press("Enter")
         elif action == "scroll_up":
             if target_name:

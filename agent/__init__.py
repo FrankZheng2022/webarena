@@ -1,8 +1,2 @@
-from .agent import (
-    Agent,
-    PromptAgent,
-    TeacherForcingAgent,
-    construct_agent,
-)
-
-__all__ = ["Agent", "TeacherForcingAgent", "PromptAgent", "construct_agent"]
+from .multimodal_master_agent import MultimodalMasterAgent
+from .multimodal_web_surfer_agent import MultimodalWebSurferAgent
