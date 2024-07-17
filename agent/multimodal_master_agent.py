@@ -1,6 +1,7 @@
 from utils.llm_query import call_vlm
 from PIL import Image
 import base64
+import pdb
 # import opto.trace as trace
 # from opto.trace import node
 ### A master agent that conditioned on the image input and task instruction, output the high-level plan/instruction
@@ -25,7 +26,7 @@ class MultimodalMasterAgent:
             image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
             image_url = f"data:image/png;base64,{image_base64}"
 
-        ### Create messages to be sent to OpenAI API
+        ### Create messages to be sent to OpenAI API 
         messages = [{"content":self.system_prompt, "role": "system"}, {"content":self.user_intent, "role": "user"}]
         if len(self.histories) > 0:
             self.histories[-1][1]["content"] = [{"type": "text", "text":self.histories[-1][1]["content"]}, 
@@ -39,8 +40,9 @@ class MultimodalMasterAgent:
             messages[-1]["content"] = [{"type": "text", "text":messages[-1]["content"]}, 
                                        {"type": "image_url", "image_url":{"url": image_url}}, 
                                       ] 
-        instructions = call_vlm(messages, max_images=3) 
+        instructions = call_vlm(messages, max_images=5) 
         self.histories.append([{"content":instructions}, None])
+        print(f"Instructions:\n {instructions}")
         return instructions
 
 

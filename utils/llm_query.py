@@ -56,30 +56,42 @@ def encode_image(image_path):
     # image_base64 = base64.b64encode(image_bytes).decode("utf-8")
     return f"data:image/png;base64,{image_base64}"
 
-def call_vlm(messages, max_images=1, temperature=0.1):
-    """Call the VLM with a prompt and image path and return the response."""
-    
-    #messages = create_with_images(messages, max_images=max_images)
 
-    def replace_image(messages):
-        for message in messages:
-            content = message['content']
-            if isinstance(content, list):
-                for item in content:
-                    if item['type'] == 'image_url':
-                        item['image_url'] = '0'
-        return messages
-    print("Messages:\n", replace_image(copy.deepcopy(messages)))
+def call_vlm(messages, max_images=1, tools=None, temperature=0.1):
+    # """Call the VLM with a prompt and image path and return the response."""
+    
+    messages = create_with_images(messages, max_images=max_images)
+
+    # def replace_image(messages):
+    #     for message in messages:
+    #         content = message['content']
+    #         if isinstance(content, list):
+    #             for item in content:
+    #                 if item['type'] == 'image_url':
+    #                     item['image_url'] = '0'
+    #     return messages
+    # print("Messages:\n", replace_image(copy.deepcopy(messages)))
 
 
     vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST_VISION"))
-    response = vlm.create(
-        messages=messages,
-        temperature=temperature
-    )
-    response = response.choices[0].message.content
-    print(f"vlm's ouput:\n{response}")
-    return response
+    if tools is None:
+        response = vlm.create(
+            messages=messages,
+            temperature=temperature
+        )
+        response = response.choices[0].message.content
+        #print(f"vlm's ouput:\n{response}")
+        return response
+    else:
+        response = vlm.create(
+            messages=messages,
+            tools=tools,
+            tool_choice='auto',
+            temperature=temperature
+        )
+        message = response.choices[0].message
+        #print(f"vlm tool calls:\n{message.tool_calls}")
+        return message
 
 def call_llm(messages):
     """Call the LLM with a prompt and return the response."""

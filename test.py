@@ -4,13 +4,15 @@ import re
 import subprocess
 import time
 from agent import MultimodalMasterAgent
-from agent import MultimodalWebSurferAgent
+from agent import MultimodalWebSurferAgentV2
 from PIL import Image
 import io
 import base64
-from opto.trace import node
+#from opto.trace import node
 from utils.llm_query import call_vlm
 from browser_env import ScriptBrowserEnv
+from playwright.sync_api import sync_playwright, TimeoutError
+from playwright._impl._errors import Error as PlaywrightError
 
 VIEWPORT_HEIGHT = 900
 VIEWPORT_WIDTH = 1440
@@ -93,9 +95,12 @@ def final_response(intent, histories):
 
             # copy them to this context
     for item in histories:
+        messages.append({"role": "user", "content": item[0]['content']})
         if item[1] is not None:
-            messages.append({"role": "user", "content": item[0]['content']})
-            messages.append({"role": "user", "content": item[1]['content'][0]['text']})
+            if isinstance(item[1]['content'], str):
+                messages.append({"role": "user", "content": item[1]['content']})
+            else:
+                messages.append({"role": "user", "content": item[1]['content'][0]['text']})
 
     # ask for the final answer
     messages.append(
@@ -123,7 +128,7 @@ def final_response(intent, histories):
 
 # Init the environment
 env = ScriptBrowserEnv(
-    headless=False,
+    headless=True,
     slow_mo=100,
     observation_type="accessibility_tree",
     current_viewport_only=True,
@@ -133,16 +138,14 @@ task_id = 0
 config_file = f"config_files/{task_id}.json"
 
 
-#GITLAB_TASK_LIST = [45, 46, 156]
 # GITLAB_TASK_LIST = [\
-#     44, 102, 103, 104, 105, 106, 132, 133, 134, 135, 136, 173, 174, \
-#     175, 176, 177, 205, 206, 207, 293, 294, 295, 296, 297, 349, 350, \
-#     389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 418, 419, 420, \
+#     350, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 418, 419, 420, \
 #     421, 422, 448, 449, 450, 451, 452, 475, 476, 477, 478, 479, 480, \
-#     481, 482, 483, 484, 485, 522, 567, 568, 569, 570, 590, 591, 592, \
-#     593, 594, 669, 670, 747, 748, 749, 750, 751, 784, 785, 786, 787, 788
+# 
+GITLAB_TASK_LIST = [748, 749, 750, 751, 784, 785, 786, 787, 788]
 # ]
-GITLAB_TASK_LIST = [132]
+# GITLAB_TASK_LIST = [104] #[44, 102, 103, [104]  106, 132, 133, 134, 135, 136, 173, 174, \
+    # 175, 176, 177, 205, 206, 207, 293, 294, 295, 296, 297, 349
 # GITLAB_TASK_LIST = [45, 46, 156, 168, 169, 170, 171, 172, 178, 179, 180, 181, 182, 258, 259,\
 #                     303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 314, 315, 316, 317, 318, \
 #                     339, 340, 341, 342, 343, 357, 411, 412, 413, 414, 415, 416, 417, 441, 442, 443, \
@@ -168,10 +171,11 @@ for task_id in GITLAB_TASK_LIST:
 
     histories = []
     master_agent = MultimodalMasterAgent(intent, config["start_url"], SITE_DESCRIPTIONS[config["sites"][0]], histories)
-    surfer_agent = MultimodalWebSurferAgent(intent, config["start_url"], SITE_DESCRIPTIONS[config["sites"][0]], histories)
+    surfer_agent = MultimodalWebSurferAgentV2(intent, config["start_url"], SITE_DESCRIPTIONS[config["sites"][0]], histories)
 
 
 
+    
     for i in range(20):
 
         screenshot = io.BytesIO(page.screenshot())
@@ -185,18 +189,18 @@ for task_id in GITLAB_TASK_LIST:
         next_obs = surfer_agent.act(page, step=i)
         page = next_obs['page']
 
-        viewport = get_visual_viewport(page)
-        percent_visible = int(viewport["height"] * 100 / viewport["scrollHeight"])
-        percent_scrolled = int(viewport["pageTop"] * 100 / viewport["scrollHeight"])
-        if percent_scrolled < 1:  # Allow some rounding error
-            position_text = "at the top of the page"
-        elif percent_scrolled + percent_visible >= 99:  # Allow some rounding error
-            position_text = "at the bottom of the page"
-        else:
-            position_text = str(percent_scrolled) + "% down from the top of the page"
-        action_description = f"{next_obs['feedback']} Here is a screenshot of [{page.title()}]({page.url}). The viewport shows {percent_visible}% of the webpage, and is positioned {position_text}.".strip()
+        # viewport = get_visual_viewport(page)
+        # percent_visible = int(viewport["height"] * 100 / viewport["scrollHeight"])
+        # percent_scrolled = int(viewport["pageTop"] * 100 / viewport["scrollHeight"])
+        # if percent_scrolled < 1:  # Allow some rounding error
+        #     position_text = "at the top of the page"
+        # elif percent_scrolled + percent_visible >= 99:  # Allow some rounding error
+        #     position_text = "at the bottom of the page"
+        # else:
+        #     position_text = str(percent_scrolled) + "% down from the top of the page"
+        # action_description = f"{next_obs['feedback']} Here is a screenshot of [{page.title()}]({page.url}). The viewport shows {percent_visible}% of the webpage, and is positioned {position_text}.".strip()
         
-        histories[-1][1] = {"content": action_description}
+        #histories[-1][1] = {"content": action_description}
         #histories.append(_create_with)
         #histories.append((instruction, action_description))
 
@@ -209,15 +213,18 @@ for task_id in GITLAB_TASK_LIST:
         final_answer = m.group(1).strip()
 
     ### Evaluation
-    from evaluation_harness.evaluators import evaluator_router
-    evaluator = evaluator_router(config_file)
-    score = evaluator(
-        answer=final_answer,
-        config_file=config_file,
-        page=page,
-        client=env.get_page_client(page),
-    )
-    total_score += score
-    print(f'==============TASK:{task_id} SCORE:{score}==================', flush=True)
+    try:
+        from evaluation_harness.evaluators import evaluator_router
+        evaluator = evaluator_router(config_file)
+        score = evaluator(
+            answer=final_answer,
+            config_file=config_file,
+            page=page,
+            client=env.get_page_client(page),
+        )
+        total_score += score
+        print(f'==============TASK:{task_id} SCORE:{score}==================', flush=True)
+    except:
+         print(f'==============TASK:{task_id} Evaluation Error==================', flush=True)
 
 print(f'==============Average Success Rate:{total_score/len(GITLAB_TASK_LIST)}==============')

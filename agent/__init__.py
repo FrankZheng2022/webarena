@@ -1,2 +1,4 @@
 from .multimodal_master_agent import MultimodalMasterAgent
 from .multimodal_web_surfer_agent import MultimodalWebSurferAgent
+from .multimodal_web_surfer_agent_v2 import MultimodalWebSurferAgentV2
+from .multimodal_web_surfer_agent_v2_new import MultimodalWebSurferAgentV2New

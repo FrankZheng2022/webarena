@@ -1,6 +1,6 @@
 from utils.llm_query import call_vlm
 from PIL import Image
-from state_of_mark import add_state_of_mark
+from utils.state_of_mark import add_state_of_mark
 import os
 import re
 from browser_env.actions import create_goto_url_action, create_go_back_action, create_scroll_action,\

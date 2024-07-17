@@ -36,6 +36,7 @@ from .envs import ScriptBrowserEnv
 from .processors import ObservationMetadata
 from .trajectory import Trajectory
 from .utils import DetachedPage, StateInfo
+from .env_wrapper import EnvWrapper
 
 __all__ = [
     "ScriptBrowserEnv",
@@ -73,4 +74,5 @@ __all__ = [
     "create_stop_action",
     "ActionParsingError",
     "Trajectory",
+    "EnvWrapper"
 ]
