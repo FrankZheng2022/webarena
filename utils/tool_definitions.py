@@ -245,3 +245,22 @@ TOOL_SLEEP = {
         },
     },
 }
+
+
+TOOL_ANSWER = {
+    "type": "function",
+    "function": {
+        "name": "answer",
+        "description": "Answer the question that the user has at the end of an episode.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reasoning": {
+                    "type": "string",
+                    "description": "A short explanation of the reasoning for calling this tool and taking this action.",
+                },
+            },
+            "required": ["reasoning"],
+        },
+    },
+}

@@ -57,10 +57,10 @@ def encode_image(image_path):
     return f"data:image/png;base64,{image_base64}"
 
 
-def call_vlm(messages, max_images=1, tools=None, temperature=0.1):
+def call_vlm(messages, max_images=1, tools=None, temperature=0.1, verbose=False):
     # """Call the VLM with a prompt and image path and return the response."""
     
-    messages = create_with_images(messages, max_images=max_images)
+    # messages = create_with_images(messages, max_images=max_images)
 
     # def replace_image(messages):
     #     for message in messages:
@@ -70,24 +70,26 @@ def call_vlm(messages, max_images=1, tools=None, temperature=0.1):
     #                 if item['type'] == 'image_url':
     #                     item['image_url'] = '0'
     #     return messages
-    # print("Messages:\n", replace_image(copy.deepcopy(messages)))
+    # if verbose:
+    #     print("Messages:\n", replace_image(copy.deepcopy(messages)))
 
 
     vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST_VISION"))
     if tools is None:
         response = vlm.create(
             messages=messages,
-            temperature=temperature
+            temperature=temperature,
+            max_tokens=4096
         )
         response = response.choices[0].message.content
-        #print(f"vlm's ouput:\n{response}")
         return response
     else:
         response = vlm.create(
             messages=messages,
             tools=tools,
             tool_choice='auto',
-            temperature=temperature
+            temperature=temperature,
+            max_tokens=4096,
         )
         message = response.choices[0].message
         #print(f"vlm tool calls:\n{message.tool_calls}")
@@ -99,7 +101,7 @@ def call_llm(messages):
     response = llm.create(
         messages = messages,
         temperature=0,
-        max_tokens=768,
+        #max_tokens=768,
         top_p=1.0,
     )
     response = response.choices[0].message.content

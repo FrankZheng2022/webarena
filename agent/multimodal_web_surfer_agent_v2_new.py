@@ -143,7 +143,7 @@ class MultimodalWebSurferAgentV2New:
 
         # Everything visible
         visible_targets = "\n".join(self._format_target_list(visible_rects, rects)) + "\n\n"
-
+        print(visible_targets)
         # Everything else
         other_targets = []
         other_targets.extend(self._format_target_list(rects_above, rects))
@@ -190,7 +190,7 @@ When deciding between tools, consider if the request can be best addressed by:
                    {"type": "image_url", "image_url":{"url":f"data:image/png;base64,{image_base64}"}}, 
                   ]  
         messages.append({"content":content, "role": "user"})
-        message = call_vlm(messages,tools=tools) 
-        print(f'Message from the surfer agent:{message}', flush=True)
-        
-        return message
+        message = call_vlm(messages,tools=tools, verbose=False) 
+        tool_name = message.tool_calls[0].function.name
+        args = json.loads(message.tool_calls[0].function.arguments)
+        return tool_name, args

@@ -45,7 +45,10 @@ class EnvWrapper:
         self._task_id = task_id
         self._config_file = f"{config_file_path}/{self._task_id}.json"
         # set the environment for the current example
+        import time
+        start_time = time.time()
         self._env.reset(options={"config_file": self._config_file})
+        print(f'Finished Resetting, taking {time.time()- start_time}s')
         self._env.context.set_default_timeout(60000) # One minute
         self._page = self._env.page
         screenshot = io.BytesIO(self._page.screenshot())
@@ -78,107 +81,106 @@ class EnvWrapper:
             user_intent = config['start_url']
         return user_intent
 
-    def execute_action(self, message):
+    def execute_action(self, tool_name, args):
         rects = get_interactive_rects(self._page)
         
         #### Execute the action
         action_description = ""
         try:
-            if message.tool_calls:
-                # We will only call one tool
-                name = message.tool_calls[0].function.name
-                args = json.loads(message.tool_calls[0].function.arguments)
+            # We will only call one tool
+            name = tool_name
+            args = args #json.loads(message.tool_calls[0].function.arguments)
 
-                if name == "visit_url":
-                    url = args.get("url")
-                    action_description = f"I typed '{url}' into the browser address bar."
-                    # Check if the argument starts with a known protocol
-                    if url.startswith(("https://", "http://", "file://", "about:")):
-                        visit_page(self._page, url)
-                    # If the argument contains a space, treat it as a search query
-                    elif " " in url:
-                        visit_page(self._page, f"https://www.bing.com/search?q={quote_plus(url)}&FORM=QBLH")
-                    # Otherwise, prefix with https://
-                    else:
-                        visit_page(self._page, "https://" + url)
-                    self._prior_metadata_hash = None
-
-                elif name == "history_back":
-                    action_description = "I clicked the browser back button."
-                    back(self._page)
-
-                elif name == "web_search":
-                    query = args.get("query")
-                    action_description = f"I typed '{query}' into the browser search bar."
-                    visit_page(self._page, f"https://www.bing.com/search?q={quote_plus(query)}&FORM=QBLH")
-                    self._prior_metadata_hash = None
-
-                elif name == "page_up":
-                    action_description = "I scrolled up one page in the browser."
-                    page_up(self._page)
-
-                elif name == "page_down":
-                    action_description = "I scrolled down one page in the browser."
-                    page_down(self._page)
-
-                elif name == "click":
-                    target_id = str(args.get("target_id"))
-                    target_name = get_target_name(target_id, rects)
-                    if target_name:
-                        action_description = f"I clicked '{target_name}'."
-                    else:
-                        action_description = "I clicked the control."
-                    new_page = click_id(self._page, target_id) 
-                    if new_page is not None:
-                        self._page = new_page
-                        self._prior_metadata_hash = None
-
-
-                elif name == "input_text":
-                    input_field_id = str(args.get("input_field_id"))
-                    text_value = str(args.get("text_value"))
-                    input_field_name = get_target_name(input_field_id, rects)
-                    if input_field_name:
-                        action_description = f"I typed '{text_value}' into '{input_field_name}'."
-                    else:
-                        action_description = f"I input '{text_value}'."
-                    fill_id(self._page, input_field_id, text_value)
-
-                elif name == "scroll_element_up":
-                    target_id = str(args.get("target_id"))
-                    target_name = get_target_name(target_id, rects)
-
-                    if target_name:
-                        action_description = f"I scrolled '{target_name}' up."
-                    else:
-                        action_description = "I scrolled the control up."
-
-                    scroll_id(self._page, target_id, "up")
-
-                elif name == "scroll_element_down":
-                    target_id = str(args.get("target_id"))
-                    target_name = target_name(target_id, rects)
-
-                    if target_name:
-                        action_description = f"I scrolled '{target_name}' down."
-                    else:
-                        action_description = "I scrolled the control down."
-
-                    scroll_id(self._page, target_id, "down")
-
-                elif name == "answer_question":
-                    question = str(args.get("question"))
-                    action_description = self._summarize_page(self._page, MarkdownConverter(), question=question)
-
-                elif name == "summarize_page":
-                    action_description = self._summarize_page(self._page, MarkdownConverter())
-
-                elif name == "sleep":
-                    action_description = "I am waiting a short period of time before taking further action."
-                    sleep(self._page, 3) # There's a 2s sleep below too
-
+            if name == "visit_url":
+                url = args.get("url")
+                action_description = f"I typed '{url}' into the browser address bar."
+                # Check if the argument starts with a known protocol
+                if url.startswith(("https://", "http://", "file://", "about:")):
+                    visit_page(self._page, url)
+                # If the argument contains a space, treat it as a search query
+                elif " " in url:
+                    visit_page(self._page, f"https://www.bing.com/search?q={quote_plus(url)}&FORM=QBLH")
+                # Otherwise, prefix with https://
                 else:
-                    raise ValueError(f"Unknown tool '{name}'. Please choose from:\n\n{tool_names}")
+                    visit_page(self._page, "https://" + url)
+                self._prior_metadata_hash = None
+
+            elif name == "history_back":
+                action_description = "I clicked the browser back button."
+                back(self._page)
+
+            elif name == "web_search":
+                query = args.get("query")
+                action_description = f"I typed '{query}' into the browser search bar."
+                visit_page(self._page, f"https://www.bing.com/search?q={quote_plus(query)}&FORM=QBLH")
+                self._prior_metadata_hash = None
+
+            elif name == "page_up":
+                action_description = "I scrolled up one page in the browser."
+                page_up(self._page)
+
+            elif name == "page_down":
+                action_description = "I scrolled down one page in the browser."
+                page_down(self._page)
+
+            elif name == "click":
+                target_id = str(args.get("target_id"))
+                target_name = get_target_name(target_id, rects)
+                if target_name:
+                    action_description = f"I clicked '{target_name}'."
+                else:
+                    action_description = "I clicked the control."
+                new_page = click_id(self._page, target_id) 
+                if new_page is not None:
+                    self._page = new_page
+                    self._prior_metadata_hash = None
+
+
+            elif name == "input_text":
+                input_field_id = str(args.get("input_field_id"))
+                text_value = str(args.get("text_value"))
+                input_field_name = get_target_name(input_field_id, rects)
+                if input_field_name:
+                    action_description = f"I typed '{text_value}' into '{input_field_name}'."
+                else:
+                    action_description = f"I input '{text_value}'."
+                fill_id(self._page, input_field_id, text_value)
+
+            elif name == "scroll_element_up":
+                target_id = str(args.get("target_id"))
+                target_name = get_target_name(target_id, rects)
+
+                if target_name:
+                    action_description = f"I scrolled '{target_name}' up."
+                else:
+                    action_description = "I scrolled the control up."
+
+                scroll_id(self._page, target_id, "up")
+
+            elif name == "scroll_element_down":
+                target_id = str(args.get("target_id"))
+                target_name = target_name(target_id, rects)
+
+                if target_name:
+                    action_description = f"I scrolled '{target_name}' down."
+                else:
+                    action_description = "I scrolled the control down."
+
+                scroll_id(self._page, target_id, "down")
+
+            elif name == "answer_question":
+                question = str(args.get("question"))
+                action_description = self._summarize_page(self._page, MarkdownConverter(), question=question)
+
+            elif name == "summarize_page":
+                action_description = self._summarize_page(self._page, MarkdownConverter())
+
+            elif name == "sleep":
+                action_description = "I am waiting a short period of time before taking further action."
+                sleep(self._page, 3) # There's a 2s sleep below too
+
+            else:
+                raise ValueError(f"Unknown tool '{name}'. Please choose from:\n\n{tool_names}")
 
         except ValueError as e:
             action_description = f'I encountered an error when executing action {message}, Error:{str(e)}'
@@ -208,7 +210,6 @@ class EnvWrapper:
         
         new_screenshot = self._page.screenshot()
         ocr_text = get_ocr_text(new_screenshot)
-        message_content = message.content or ""
-        surfer_action_summary = f"{message_content}\n\n{action_description}\n\nHere is a screenshot of [{self._page.title()}]({self._page.url}). The viewport shows {percent_visible}% of the webpage, and is positioned {position_text}.{page_metadata}\nAutomatic OCR of the page screenshot has detected the following text:\n\n{ocr_text}".strip()
+        surfer_action_summary = f"{action_description}\n\nHere is a screenshot of [{self._page.title()}]({self._page.url}). The viewport shows {percent_visible}% of the webpage, and is positioned {position_text}.\nAutomatic OCR of the page screenshot has detected the following text:\n\n{ocr_text}".strip()
         return {"page":self._page, "screenshot": new_screenshot, "action_description": action_description, "surfer_action_summary": surfer_action_summary}
 

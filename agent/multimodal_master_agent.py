@@ -40,7 +40,7 @@ class MultimodalMasterAgent:
             messages[-1]["content"] = [{"type": "text", "text":messages[-1]["content"]}, 
                                        {"type": "image_url", "image_url":{"url": image_url}}, 
                                       ] 
-        instructions = call_vlm(messages, max_images=5) 
+        instructions = call_vlm(messages, max_images=5, verbose=True) 
         self.histories.append([{"content":instructions}, None])
         print(f"Instructions:\n {instructions}")
         return instructions
