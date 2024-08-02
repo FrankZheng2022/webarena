@@ -159,8 +159,8 @@ def step(action):
     Take action in the environment and return the screenshot (path) of next page, screenshot with set of mark for next page.
     """
     global STEP_COUNT
+    STEP_COUNT += 1
     try:
-        STEP_COUNT += 1
         screenshot_path, som_screenshot_path, done, action_description = env.execute_action(action)  # next_obs, reward, termination, truncation, info
         feedback = user_feedback(screenshot_path, action, action_description)
     except ValueError as e:

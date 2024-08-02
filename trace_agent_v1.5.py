@@ -193,7 +193,6 @@ def act(som_screenshot_path, url, plan, user_intent, available_tools_names, star
                         {user_intent}"""
     available_tools = [TOOL_TYPE if tool == 'input_text' else eval("TOOL_" + tool.upper()) for tool in available_tools_names]
     available_tools_names = '\n'.join(available_tools_names)
-    print(available_tools_names)
     text_prompt = f"""
                     Consider the following screenshot of a web browser, which is open to the page '{url}'. In this screenshot, interactive elements are outlined in bounding boxes of different colors. Each bounding box has a numeric ID label in the same color. Additional information about each visible label is listed below:
 
@@ -243,9 +242,12 @@ def step(action):
     Take action in the environment and return the screenshot (path) of next page, screenshot with set of mark for next page.
     """
     global STEP_COUNT
-    STEP_COUNT += 1
-    screenshot_path, som_screenshot_path, done, action_description = env.execute_action(action)  # next_obs, reward, termination, truncation, info
-    feedback = user_feedback(action, action_description)
+    try:
+        screenshot_path, som_screenshot_path, done, action_description = env.execute_action(action)  # next_obs, reward, termination, truncation, info
+        feedback = user_feedback(action, action_description)
+        STEP_COUNT += 1
+    except ValueError as e:
+        raise ValueError(e)
     return screenshot_path, som_screenshot_path, done, feedback
 
 
@@ -339,7 +341,7 @@ def rollout(user_intent, screenshot_path, som_screenshot_path, horizon, planner,
             tools.append(TOOL_PAGE_DOWN)
         available_tools_names = [t["function"]["name"] for t in tools]
         action = actor(som_screenshot_path, page.url, plan, user_intent, available_tools_names, start_url, site_description_prompt)
-        print(f'Actions:{action[0]}, Arguments:{action[1]}')
+        #print(f'Actions:{action[0]}, Arguments:{action[1]}')
         
         screenshot_path, som_screenshot_path, done, feedback = step(action)
 
