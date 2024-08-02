@@ -89,7 +89,7 @@ class EnvWrapper:
         try:
             # We will only call one tool
             name = tool_name
-            args = args #json.loads(message.tool_calls[0].function.arguments)
+            #args = args #json.loads(message.tool_calls[0].function.arguments)
 
             if name == "visit_url":
                 url = args.get("url")

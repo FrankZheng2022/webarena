@@ -43,17 +43,6 @@ def encode_image(image_path):
     """
     with open(image_path, "rb") as image_file:
         image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
-    # image_bytes = image
-    # if isinstance(image, Image.Image):
-    #     image_buffer = io.BytesIO()
-    #     image.save(image_buffer, format="PNG")
-    #     image_bytes = image_buffer.getvalue()
-    # elif isinstance(image, io.BytesIO):
-    #     image_bytes = image_buffer.getvalue()
-    # elif isinstance(image, io.BufferedIOBase):
-    #     image_bytes = image.read()
-
-    # image_base64 = base64.b64encode(image_bytes).decode("utf-8")
     return f"data:image/png;base64,{image_base64}"
 
 
@@ -62,19 +51,17 @@ def call_vlm(messages, max_images=1, tools=None, temperature=0.1, verbose=False)
     
     # messages = create_with_images(messages, max_images=max_images)
 
-    # def replace_image(messages):
-    #     for message in messages:
-    #         content = message['content']
-    #         if isinstance(content, list):
-    #             for item in content:
-    #                 if item['type'] == 'image_url':
-    #                     item['image_url'] = '0'
-    #     return messages
-    # if verbose:
-    #     print("Messages:\n", replace_image(copy.deepcopy(messages)))
-
-
-    vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST_VISION"))
+    def replace_image(messages):
+        for message in messages:
+            content = message['content']
+            if isinstance(content, list):
+                for item in content:
+                    if item['type'] == 'image_url':
+                        item['image_url'] = '0'
+        return messages
+    if verbose:
+        print("Messages:\n", replace_image(copy.deepcopy(messages)))
+    vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST"))
     if tools is None:
         response = vlm.create(
             messages=messages,

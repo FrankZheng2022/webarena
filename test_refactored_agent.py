@@ -145,8 +145,8 @@ for task_id in GITLAB_TASK_LIST:
         instruction = master_agent.plan('./images/screenshot.png')
         if "TERMINATE" in instruction:
             break
-        message = surfer_agent.act(env.get_page(), step=i)
-        execution = env.execute_action(message)
+        tool_name, args = surfer_agent.act(env.get_page(), step=i)
+        execution = env.execute_action(tool_name, args)
         print(f"Action Description:{execution['action_description']}")
         surfer_action_summary = execution["surfer_action_summary"]
         histories[-1][1] = {"content": surfer_action_summary}

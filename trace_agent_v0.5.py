@@ -159,16 +159,16 @@ def step(action):
     Take action in the environment and return the screenshot (path) of next page, screenshot with set of mark for next page.
     """
     global STEP_COUNT
-    STEP_COUNT += 1
     try:
         screenshot_path, som_screenshot_path, done, action_description = env.execute_action(action)  # next_obs, reward, termination, truncation, info
-        feedback = user_feedback(screenshot_path, action, action_description)
+        feedback = user_feedback(action, action_description)
+        STEP_COUNT += 1
     except ValueError as e:
         raise ValueError(e)
-    return node(screenshot_path), node(som_screenshot_path), done, feedback
+    return screenshot_path, som_screenshot_path, done, feedback
 
 
-def user_feedback(screenshot_path, action, action_description):
+def user_feedback(action, action_description):
     """
     Provide feedback to the user.
     """
@@ -207,10 +207,11 @@ def rollout(user_intent, screenshot_path, som_screenshot_path, horizon, planner,
         buffer['obs'].append(som_screenshot_path)
         buffer["feedback"].append(feedback.data)
         screenshot_list.append(screenshot_path.data)
-        #screenshot_list.append(som_screenshot_path.data)
+        ### test whether also to add som_screenshot_path as the information is mostly redundant
+        #screenshot_list.append(som_screenshot_path.data) 
         if done:
             break
-    return buffer, done, screenshot_list
+    return buffer, done, screenshot_path, som_screenshot_path, screenshot_list
 
 
 ### Optimization for multi step
@@ -223,14 +224,15 @@ def multi_step(user_intent, planner, actor, n_iterations=50, rollout_horizon=1, 
     done = True
     for i in range(n_iterations):  # iterations
         error = None
-        try:  # Trace the rollout; detach init_obs to avoid back-propagating across time.
+        try:  
             if done:
                 traj = defaultdict(list)
                 data.append(traj)
                 screenshot_path, som_screenshot_path = reset()
                 optimizer.objective = f"{optimizer.default_objective}"
-                screenshot_list = [screenshot_path.data, som_screenshot_path.data]
-            buffer, done, screenshot_list = rollout(user_intent, screenshot_path, som_screenshot_path, rollout_horizon, planner, actor)
+            buffer, done, screenshot_path, som_screenshot_path, screenshot_list = rollout(user_intent, screenshot_path.detach(), 
+                                                                                          som_screenshot_path.detach(), rollout_horizon, 
+                                                                                          planner, actor)
 
         except ExecutionError as e:
             error = e
@@ -253,16 +255,23 @@ def multi_step(user_intent, planner, actor, n_iterations=50, rollout_horizon=1, 
         print('===========Current Act Function===========')
         print(actor.parameter.data, flush=True)
 
-# Need ablation of not tracing step and reset
-# Need ablation of ignoring some info in propagated feedback
 
-planner = plan
-actor = act
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Evaluation for WidowX Robot')
+    parser.add_argument('--task_id', type=int, default=103)
+    parser.add_argument('--horizon', type=int, default=20)
+    parser.add_argument('--rollout_horizon', type=int, default=3)
+    parser.add_argument('--n_iterations', type=int, default=50)
+    args = parser.parse_args()
 
-TASK_ID = 44
-env = TraceEnvWrapper(headless=True)
-config_file = f"config_files/{TASK_ID}.json"
-with open(config_file, "r") as f:
-    config = json.load(f)
-STEP_COUNT = 0
-multi_step(config["intent"], planner, actor, n_iterations=50, rollout_horizon=3, horizon=20)
+    planner = plan
+    actor = act
+    TASK_ID = args.task_id
+    env = TraceEnvWrapper(headless=True)
+    config_file = f"config_files/{TASK_ID}.json"
+    with open(config_file, "r") as f:
+        config = json.load(f)
+    STEP_COUNT = 0
+    multi_step(config["intent"], planner, actor, n_iterations=args.n_iterations, 
+               rollout_horizon=args.rollout_horizon, horizon=args.horizon)

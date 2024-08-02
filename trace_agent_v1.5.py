@@ -351,7 +351,7 @@ def rollout(user_intent, screenshot_path, som_screenshot_path, horizon, planner,
         #screenshot_list.append(som_screenshot_path.data)
         if done:
             break
-    return buffer, done, screenshot_list
+    return buffer, done, screenshot_path, som_screenshot_path, screenshot_list
 
 
 ### Optimization for multi step
@@ -369,9 +369,9 @@ def multi_step(env, start_url, site_description_prompt, user_intent, planner, ac
                 traj = defaultdict(list)
                 data.append(traj)
                 screenshot_path, som_screenshot_path = reset()
-                screenshot_list = [screenshot_path.data]
                 optimizer.objective = f"{optimizer.default_objective}"
-            buffer, done, screenshot_list = rollout(user_intent, screenshot_path, som_screenshot_path, rollout_horizon, planner, actor, env, start_url, site_description_prompt)
+            buffer, done, screenshot_path, som_screenshot_path, screenshot_list = rollout(user_intent, screenshot_path.detach(), som_screenshot_path.detach(), 
+                                                                                          rollout_horizon, planner, actor, env, start_url, site_description_prompt)
         except ExecutionError as e:
             error = e
 
@@ -384,7 +384,7 @@ def multi_step(env, start_url, site_description_prompt, user_intent, planner, ac
 
         # Optimization
         optimizer.zero_feedback()
-        graph = optimizer.backward(target, feedback, retain_graph=True, visualize=True) 
+        graph = optimizer.backward(target, feedback, visualize=True) 
         graph.render(filename=f'images/trace_images/computational_graph_{i}', format='png')
         #print('Computational Graph Saved')
         optimizer.step(verbose=True, screenshot_list=screenshot_list)
@@ -398,13 +398,24 @@ def multi_step(env, start_url, site_description_prompt, user_intent, planner, ac
 # Need ablation of ignoring some info in propagated feedback
 # Need to test backward across time.
 
-planner = plan
-actor = act
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Evaluation for WidowX Robot')
+    parser.add_argument('--task_id', type=int, default=103)
+    parser.add_argument('--horizon', type=int, default=20)
+    parser.add_argument('--rollout_horizon', type=int, default=3)
+    parser.add_argument('--n_iterations', type=int, default=50)
+    args = parser.parse_args()
 
-TASK_ID = 103
-env = TraceEnvWrapper(headless=True)
-config_file = f"config_files/{TASK_ID}.json"
-with open(config_file, "r") as f:
-    config = json.load(f)
-STEP_COUNT = 0
-multi_step(env, config["start_url"], SITE_DESCRIPTIONS[config["sites"][0]], config["intent"], planner, actor, n_iterations=50, rollout_horizon=2, horizon=20)
+    planner = plan
+    actor = act
+
+    TASK_ID = args.task_id
+    env = TraceEnvWrapper(headless=True)
+    config_file = f"config_files/{TASK_ID}.json"
+    with open(config_file, "r") as f:
+        config = json.load(f)
+    STEP_COUNT = 0
+    multi_step(env, config["start_url"], SITE_DESCRIPTIONS[config["sites"][0]], config["intent"], 
+               planner, actor, n_iterations=args.n_iterations, 
+               rollout_horizon=args.rollout_horizon, horizon=args.horizon)

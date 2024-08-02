@@ -143,7 +143,6 @@ class MultimodalWebSurferAgentV2New:
 
         # Everything visible
         visible_targets = "\n".join(self._format_target_list(visible_rects, rects)) + "\n\n"
-        print(visible_targets)
         # Everything else
         other_targets = []
         other_targets.extend(self._format_target_list(rects_above, rects))

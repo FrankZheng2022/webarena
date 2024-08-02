@@ -339,7 +339,7 @@ def get_ocr_text(image):
 
 def call_vlm(messages, tools=None):
     # """Call the VLM with a prompt and image path and return the response."""
-    vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST_VISION"))
+    vlm = autogen.OpenAIWrapper(config_list=autogen.config_list_from_json("OAI_CONFIG_LIST"))
     if tools is None:
         response = vlm.create(
             messages=messages,
