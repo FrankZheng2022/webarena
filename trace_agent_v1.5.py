@@ -369,6 +369,7 @@ def multi_step(env, start_url, site_description_prompt, user_intent, planner, ac
                 traj = defaultdict(list)
                 data.append(traj)
                 screenshot_path, som_screenshot_path = reset()
+                screenshot_list = [screenshot_path.data]
                 optimizer.objective = f"{optimizer.default_objective}"
             buffer, done, screenshot_path, som_screenshot_path, screenshot_list = rollout(user_intent, screenshot_path.detach(), som_screenshot_path.detach(), 
                                                                                           rollout_horizon, planner, actor, env, start_url, site_description_prompt)

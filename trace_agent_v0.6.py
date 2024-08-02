@@ -71,31 +71,36 @@ print("Done generating config files with the correct URLs")
 subprocess.run(["bash", "prepare.sh"])
 print("Done saving account cookies")
 
-@bundle(trainable=True)
+@bundle(trainable=False)
 def plan(screenshot_path, user_intent):
     """
-        Given the current screenshot of the page and the user_intent, return a plan for the agent's future actions.
-        To use GPT-4o API, use the following function:
-            call_vlm(messages)
-        Here is an example message list:
-        ```
-            messages = [
-                {"role":"system", "content": "You are a general-purpose AI assistant and can handle many questions but you don't have access to a web browser. However, the user you are talking to does have a browser, and you can see the screen. Provide short direct instructions to them."}
-                {"role":"user", "content": [
-                    {"type": "text", "text":"Abishek wants to check my dotfile configurations. Please invite him to the repo as a guest"},
-                    {"type": "image_url", "image_url":{"url": image_url}}
-                ]}
-            ]
-        ```
-        To convert the screenshot into image_url here, use the following code:
-        ```
-        import base64
-        with open(screenshot_path, "rb") as image_file:
-            image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
-            image_url = f"data:image/png;base64,{image_base64}"
-        ```
+        Given the current screenshot of the page, the user_intent, the start url of the webpage and the description of the website,
+        return a plan for the agent's future actions.
     """
-    return None
+    system_prompt = """You are a general-purpose AI assistant and can handle many questions but you don't have access to a web browser. However, the user you are talking to does have >
+                        Once the user has taken the final necessary action to complete the task, and you have fully addressed the initial request, reply with the word TERMINATE."""
+    user_intent   = f"""On this website, please complete the following task:
+                        {user_intent}"""
+    
+
+    with open(screenshot_path, "rb") as image_file:
+        image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+        image_url = f"data:image/png;base64,{image_base64}"
+
+    ### Create messages to be sent to OpenAI API 
+    messages = [
+        {"content": system_prompt, "role": "system"}, 
+        {
+            "content": [
+                {'type': 'text', 'text': user_intent},
+                {"type": "image_url", "image_url": {"url": image_url}}
+            ], 
+            "role": "user"
+        }
+    ]
+    instructions = call_vlm(messages) 
+
+    return instructions
 
 @bundle(trainable=True)
 def act(som_screenshot_path, plan, user_intent):
