@@ -215,60 +215,78 @@ def rollout(user_intent, screenshot_path, som_screenshot_path, horizon, planner,
 
 
 ### Optimization for multi step
-def multi_step(user_intent, planner, actor, n_iterations=50, 
-               rollout_horizon=1, horizon=20, add_image_observation=False):
+def multi_step(user_intent, planner, actor, rollout_horizon=1):
     optimizer = OptoPrime(planner.parameters() + 
                                   actor.parameters()
                                   )
-    data = list()
-    traj = defaultdict(list)
-    done = True
-    for i in range(n_iterations):  # iterations
-        error = None
-        try:  
-            if done:
-                traj = defaultdict(list)
-                data.append(traj)
-                screenshot_path, som_screenshot_path = reset()
-                screenshot_list = [screenshot_path.data]
-                optimizer.objective = f"{optimizer.default_objective}"
-            buffer, done, screenshot_path, som_screenshot_path, screenshot_list = rollout(user_intent, screenshot_path.detach(), 
-                                                                                          som_screenshot_path.detach(), rollout_horizon, 
-                                                                                          planner, actor)
+    error = None
+    screenshot_path, som_screenshot_path = reset()
+    screenshot_list = [screenshot_path.data]
+    optimizer.objective = f"{optimizer.default_objective}"
+    try:
+        buffer, done, screenshot_path, som_screenshot_path, screenshot_list = rollout(user_intent, screenshot_path.detach(), 
+                                                                                    som_screenshot_path.detach(), rollout_horizon, 
+                                                                                    planner, actor)
 
-        except ExecutionError as e:
-            error = e
+    except ExecutionError as e:
+        error = e
 
-        if error is None:
-            feedback = "\n".join(buffer["feedback"])
-            target = buffer["obs"][-1]  # last observation
-        else:
-            target = error.exception_node
-            feedback = target.create_feedback()
+    if error is None:
+        target = screenshot_path
+    else:
+        target = error.exception_node
+    
+    feedback1 = f"""
+    In your response, describe what is presented in the screenshot {screenshot_list[0]}.
+    Example LLM response:
+    {{"reasoning": 'Your reasoning steps',
+        "answer", 'Your answer to the questions asked in feedback',
+    }}
+    """   
 
-        # Optimization
-        optimizer.zero_feedback()
-        graph = optimizer.backward(target, feedback, retain_graph=True, visualize=True) 
-        graph.render(filename=f'images/trace_images/computational_graph_{i}', format='png')
-        if add_image_observation:
-            optimizer.step(verbose=True, screenshot_list=screenshot_list)
-        else:
-            optimizer.step(verbose=True)
-        global STEP_COUNT
-        print('===========Current Plan Function===========')
-        print(planner.parameter.data)
-        print('===========Current Act Function===========')
-        print(actor.parameter.data, flush=True)
+    # Optimization
+    optimizer.zero_feedback()
+    optimizer.backward(target, feedback1, retain_graph=True) 
+    optimizer.step(verbose=True, screenshot_list=screenshot_list)
+
+
+    ######### Ask the second question
+
+    error = None
+    screenshot_path, som_screenshot_path = reset()
+    screenshot_list = [screenshot_path.data]
+    optimizer.objective = f"{optimizer.default_objective}"
+    try:
+        buffer, done, screenshot_path, som_screenshot_path, screenshot_list = rollout(user_intent, screenshot_path.detach(), 
+                                                                                    som_screenshot_path.detach(), rollout_horizon, 
+                                                                                    planner, actor)
+
+    except ExecutionError as e:
+        error = e
+
+    if error is None:
+        target = screenshot_path
+    else:
+        target = error.exception_node
+
+    feedback2 = f"""
+    In your response, describe what are the text that are available on this image?
+    Example LLM response:
+    {{"reasoning": 'Your reasoning steps',
+        "answer", 'Your answer to the questions asked in feedback',
+    }}
+    """   
+    # Optimization
+    optimizer.zero_feedback()
+    optimizer.backward(target, feedback2, retain_graph=True) 
+    optimizer.step(verbose=True, screenshot_list=screenshot_list)
 
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--task_id', type=int, default=103)
-    parser.add_argument('--horizon', type=int, default=20)
     parser.add_argument('--rollout_horizon', type=int, default=1)
-    parser.add_argument('--n_iterations', type=int, default=30)
-    parser.add_argument('--add_image_observation', action='store_true')
     args = parser.parse_args()
 
     planner = plan
@@ -279,7 +297,5 @@ if __name__ == '__main__':
     with open(config_file, "r") as f:
         config = json.load(f)
     STEP_COUNT = 0
-    multi_step(config["intent"], planner, actor, n_iterations=args.n_iterations, 
-               rollout_horizon=args.rollout_horizon, 
-               horizon=args.horizon,
-               add_image_observation=args.add_image_observation)
+    multi_step(config["intent"], planner, actor, 
+               rollout_horizon=args.rollout_horizon)

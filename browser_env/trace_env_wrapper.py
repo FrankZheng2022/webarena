@@ -133,8 +133,9 @@ class TraceEnvWrapper:
 
 
         elif name == "input_text":
-            input_field_id = str(args.get("input_field_id"))
-            text_value = str(args.get("text_value"))
+            #input_field_id = str(args.get("input_field_id"))
+            input_field_id = str(args.get("target_id"))
+            text_value = str(args.get("argument"))
             input_field_name = get_target_name(input_field_id, rects)
             if input_field_name:
                 action_description = f"I typed '{text_value}' into '{input_field_name}'."

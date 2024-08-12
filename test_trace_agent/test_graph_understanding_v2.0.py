@@ -126,10 +126,10 @@ def format_target_list(ids, rects):
 
 @bundle(trainable=False)
 def plan(screenshot_path, user_intent, start_url, site_description_prompt):
-    """
+    '''
         Given the current screenshot of the page, the user_intent, the start url of the webpage and the description of the website,
         return a plan for the agent's future actions.
-    """
+    '''
     system_prompt = """You are a general-purpose AI assistant and can handle many questions but you don't have access to a web browser. However, the user you are talking to does have a browser, and you can see the screen. Provide short direct instructions to them. 
                         Once the user has taken the final necessary action to complete the task, and you have fully addressed the initial request, reply with the word TERMINATE."""
     user_intent   = f"""We are visiting the website {start_url} {site_description_prompt}. On this website, please complete the following task:
@@ -155,39 +155,13 @@ def plan(screenshot_path, user_intent, start_url, site_description_prompt):
 
     return instructions
 
-
 @bundle(trainable=False)
-def act(som_screenshot_path, url, plan, user_intent, available_tools_names, start_url, site_description_prompt):
-    """
-        Given the current screenshot and url of the page, the user_intent, 
-        a high-level plan returned by the planner as well, 
-        as well as a list of tools currently available,
-        return two things: an executable action and its argument. 
-        Additionally, you are also given the start_url of the current task and the description of the current website.
-        input_text(args): input text: args.get("text_value") into the field id: args.get("input_field_id").
-        click(args): click element with id = args.get("target_id").
-        answer(args): choose this action if the the plan includes terminate and the user's intent has also been accomplished
-                        if the user's intent is a question, answer with args.get("answer"),
-                        otherwise, just let args.get("final_answer") to be None
-        page_down: scroll the page down
-        page_up: scroll the page up
-        history_back: go back to the last page
-        
-        
-        You can get access to the following global variables: VISIBLE_TARGETS, OTHER_TARGETS, FOCUSED_HINT
-        1. VISIBLE_TARGETS is a string that puts together all the visible interactible elements, their ids and describe the list of possible actions 
-        Here is an example of VISIBLE_TARGETS:
-              {"id": 146, "name": "The A11Y Project / a11yproject.com", "role": "link", "tools": ["click"] }
-              ...
-              {"id": 100, "name": "", "role": "searchbox", "tools": ["input_text"] }"
-        2. OTHER_TARGETS is another string that puts together all the other interactible elements that you do not see in the viewport. 
-        You need to either scroll up or down to see those strings. Format of OTHER_TARGETS is the exact same as VISIBLE_TARGETS.
-        3. FOCUSED_HINT is a string that tells you which element has the input focus. 
-        Here is an example:
-        "The element Starred with ID 132 currently has the input focus."
-        If no element has input focus, it will just be an empty string
-
-    """
+def act(trainable_hint, som_screenshot_path, url, plan, user_intent, available_tools_names, start_url, site_description_prompt):
+    '''
+    ### Given the trainable hint, current screenshot and url of the page, the user_intent, 
+    ### a high-level plan returned by the planner as well, 
+    ### as well as a list of tools currently available,
+    ### return two things: an executable action and its argument. 
     global VISIBLE_TARGETS, OTHER_TARGETS, FOCUSED_HINT
 
     user_intent   = f"""We are visiting the website {start_url} {site_description_prompt}. On this website, please complete the following task:
@@ -220,28 +194,131 @@ def act(som_screenshot_path, url, plan, user_intent, available_tools_names, star
     action = message.tool_calls[0].function.name
     args = json.loads(message.tool_calls[0].function.arguments)
     return action, args
+    '''
+    # Given the current screenshot and url of the page, the user_intent, 
+    # a high-level plan returned by the planner as well, 
+    # as well as a list of tools currently available,
+    # return two things: an executable action and its argument. 
+    # Additionally, you are also given the start_url of the current task and the description of the current website.
+    # input_text(args): input text: args.get("text_value") into the field id: args.get("input_field_id").
+    # click(args): click element with id = args.get("target_id").
+    # answer(args): choose this action if the the plan includes terminate and the user's intent has also been accomplished
+    #                 if the user's intent is a question, answer with args.get("answer"),
+    #                 otherwise, just let args.get("final_answer") to be None
+    # page_down: scroll the page down
+    # page_up: scroll the page up
+    # history_back: go back to the last page
+    
+    
+    # You can get access to the following global variables: VISIBLE_TARGETS, OTHER_TARGETS, FOCUSED_HINT
+    # 1. VISIBLE_TARGETS is a string that puts together all the visible interactible elements, their ids and describe the list of possible actions 
+    # Here is an example of VISIBLE_TARGETS:
+    #         {"id": 146, "name": "The A11Y Project / a11yproject.com", "role": "link", "tools": ["click"] }
+    #         ...
+    #         {"id": 100, "name": "", "role": "searchbox", "tools": ["input_text"] }"
+    # 2. OTHER_TARGETS is another string that puts together all the other interactible elements that you do not see in the viewport. 
+    # You need to either scroll up or down to see those strings. Format of OTHER_TARGETS is the exact same as VISIBLE_TARGETS.
+    # 3. FOCUSED_HINT is a string that tells you which element has the input focus. 
+    # Here is an example:
+    # "The element Starred with ID 132 currently has the input focus."
+    # If no element has input focus, it will just be an empty string
 
+    global VISIBLE_TARGETS, OTHER_TARGETS, FOCUSED_HINT
+
+    user_intent   = f"""We are visiting the website {start_url} {site_description_prompt}. On this website, please complete the following task:
+                        {user_intent}"""
+    available_tools = [TOOL_TYPE if tool == 'input_text' else eval("TOOL_" + tool.upper()) for tool in available_tools_names]
+    available_tools_names = '\n'.join(available_tools_names)
+    text_prompt = f"""
+                    Consider the following screenshot of a web browser, which is open to the page '{url}'. In this screenshot, interactive elements are outlined in bounding boxes of different colors. Each bounding box has a numeric ID label in the same color. Additional information about each visible label is listed below:
+
+                    {VISIBLE_TARGETS}{OTHER_TARGETS}{FOCUSED_HINT}You are to respond to the user's most recent request by selecting an appropriate action from the following set (choose answer if TERMINATE appears in the plan and you think the episode has ended.):
+
+                    {available_tools_names}
+
+                    Please output the appropriate action in the following format:
+                    TARGET_ID:   <id of interactive element.>
+                    ACTION:   <One single action from the element's list of actions>
+                    ARGUMENT: <The action' argument, if any. For example, the text to type if the action is typing>
+                    """.strip()
+    text_prompt += f"\n{trainable_hint}"
+
+    messages = [{"content": user_intent, "role": "user"}, {"content": f"High-level Action Plan:\n{plan}", "role": "assistant"}]
+    with open(som_screenshot_path, "rb") as image_file:
+        image_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+    content = [{"type": "text", "text":text_prompt},
+                {"type": "image_url", "image_url":{"url":f"data:image/png;base64,{image_base64}"}}, 
+    ]  
+
+    messages.append({"content":content, "role": "user"})
+    response = call_vlm(messages,verbose=False) 
+    return response
+
+@bundle(trainable=False)
+def parse_answer(response):
+    '''
+        Given the results returned from vlm, parse the results into actions
+        return action and arguments
+        Example1 output:
+        action: "click"
+        args: {
+            "target_id": 44,
+            "argument": ""
+        }
+        Example2 output:
+        action: "input_text"
+        args: {
+            "target_id": 12,
+            "argument": "ffmpeng-python"
+        }
+
+
+    '''
+    import re
+
+    action = None
+    m = re.search(r"ACTION:\s*(.*?)\n", response)
+    if m:
+        action = m.group(1).strip().lower()
+    else:
+        m = re.search(r"ACTION:\s*(\w+)", response)
+        if m:
+            action = m.group(1).strip().lower()
+        else:
+            raise ValueError("No action found in response")
+
+    m = re.search(r"TARGET_ID:\s*(\d+)", response)
+    if m:
+        target_id = m.group(1).strip()
+    else:
+        target_id = ""
+
+    m = re.search(r"ARGUMENT:\s*(.*)", response)
+    if m:
+        argument = m.group(1).strip()
+    else:
+        argument = ""
+
+    args = {
+        "target_id": target_id,
+        "argument": argument
+    }
+    return action, args
 
     
-
-
-
-
-
-
 @bundle(trainable=False, overwrite_python_recursion=False)
 def reset():
-    """
+    '''
     Reset the environment and return the initial screenshot.
-    """
+    '''
     return env.reset(TASK_ID)  
 
 
 @bundle(trainable=False, overwrite_python_recursion=False)
 def step(action):
-    """
+    '''
     Take action in the environment and return the screenshot (path) of next page, screenshot with set of mark for next page.
-    """
+    '''
     global STEP_COUNT
     try:
         screenshot_path, som_screenshot_path, done, action_description = env.execute_action(action)  # next_obs, reward, termination, truncation, info
@@ -280,17 +357,15 @@ def user_feedback(action, action_description):
 
 VISIBLE_TARGETS, OTHER_TARGETS, FOCUSED_HINT = None, None, None
 
-def rollout(user_intent, screenshot_path, som_screenshot_path, horizon, planner, actor, env, start_url, site_description_prompt):
-    # Reset the env outside
-    # Rollout for horizon steps
-
+def rollout(user_intent, screenshot_path, som_screenshot_path, horizon, 
+            trainable_hint, parser, env, start_url, site_description_prompt):
     global VISIBLE_TARGETS, OTHER_TARGETS, FOCUSED_HINT
 
     page = env.get_page()
     buffer = defaultdict(list)
     screenshot_list = [screenshot_path.data]
     for _ in range(horizon):
-        plan = planner(screenshot_path, user_intent, start_url, site_description_prompt)
+        instruction = plan(screenshot_path, user_intent, start_url, site_description_prompt)
 
         ###################### Definte FOCUSED_HINT ######################
         focused = get_focused_rect_id(page)
@@ -341,7 +416,8 @@ def rollout(user_intent, screenshot_path, som_screenshot_path, horizon, planner,
         if (viewport["pageTop"] + viewport["height"] + 5) < viewport["scrollHeight"]:
             tools.append(TOOL_PAGE_DOWN)
         available_tools_names = [t["function"]["name"] for t in tools]
-        action = actor(som_screenshot_path, page.url, plan, user_intent, available_tools_names, start_url, site_description_prompt)
+        response = act(trainable_hint, som_screenshot_path, page.url, instruction, user_intent, available_tools_names, start_url, site_description_prompt)
+        action = parse_answer(response)
         #print(f'Actions:{action[0]}, Arguments:{action[1]}')
         
         screenshot_path, som_screenshot_path, done, feedback = step(action)
@@ -354,62 +430,112 @@ def rollout(user_intent, screenshot_path, som_screenshot_path, horizon, planner,
             break
     return buffer, done, screenshot_path, som_screenshot_path, screenshot_list
 
+
 ### Optimization for multi step
-def multi_step(env, start_url, site_description_prompt, user_intent, planner, actor, n_iterations=50, rollout_horizon=1, horizon=20):
-    optimizer = OptoPrime(planner.parameters() + 
-                          actor.parameters()
-                         )
-    data = list()
-    traj = defaultdict(list)
-    done = True
-    for i in range(n_iterations):  # iterations
-        error = None
-        try:  # Trace the rollout; detach init_obs to avoid back-propagating across time.
-            if done:
-                traj = defaultdict(list)
-                data.append(traj)
-                screenshot_path, som_screenshot_path = reset()
-                screenshot_list = [screenshot_path.data]
-                optimizer.objective = f"{optimizer.default_objective}"
-            buffer, done, screenshot_path, som_screenshot_path, screenshot_list = rollout(user_intent, screenshot_path.detach(), som_screenshot_path.detach(), 
-                                                                                          rollout_horizon, planner, actor, env, start_url, site_description_prompt)
-        except ExecutionError as e:
-            error = e
+def test(env, start_url, site_description_prompt, user_intent, trainable_hint,
+        parser, rollout_horizon=1, horizon=20, include_image=False,
+        hide_intermediate_values=False):
+    optimizer = OptoPrime([trainable_hint,])# + parser.parameters())
+    error = None
+    try:  # Trace the rollout; detach init_obs to avoid back-propagating across time.
+        screenshot_path, som_screenshot_path = reset()
+        screenshot_list = [screenshot_path.data]
+        optimizer.objective = f"{optimizer.default_objective}"
+        buffer, done, screenshot_path, som_screenshot_path, screenshot_list = rollout(user_intent, screenshot_path.detach(), som_screenshot_path.detach(), 
+                                                                                        rollout_horizon, trainable_hint, parser,
+                                                                                        env, start_url, site_description_prompt)
+    except ExecutionError as e:
+        error = e
 
-        if error is None:
-            feedback = "\n".join(buffer["feedback"])
-            target = buffer["obs"][-1]  # last observation
-        else:
-            feedback = str(error)
-            target = error.exception_node
+    if error is None:
+        target = buffer["obs"][-1]  # last observation
+    else:
+        target = error.exception_node
+    
+    # feedback = f"""
+    # 1. In your response, describe what are the available nodes in the current computational graph. 
+    # 2. Describe what are the set of variables that you can update.
+    # 3. For the act function, what are the set of available actions that it could take?
+    # Example LLM response:
+    # {{"reasoning": 'Your reasoning steps',
+    #     "answer", ['Your answer to the first questions asked in feedback',
+    #                 ...,
+    #                 'Your answer to the last questions asked in feedback',
+    #               ]
+    # }}
+    # """   
 
-        # Optimization
-        optimizer.zero_feedback()
-        graph = optimizer.backward(target, feedback, visualize=True) 
-        graph.render(filename=f'images/trace_images/computational_graph_{i}', format='png')
-        #print('Computational Graph Saved')
-        optimizer.step(verbose=True, screenshot_list=screenshot_list)
-        global STEP_COUNT
-        print('===========Current Plan Function===========')
-        print(planner.parameter.data)
-        print('===========Current Act Function===========')
-        print(actor.parameter.data, flush=True)
+    feedback = f"""
+    1. In your response, describe what are the available nodes in the current computational graph. 
+    2. Describe what are the set of variables that you could update in this computational graph.
+    Example LLM response:
+    {{"reasoning": 'Your reasoning steps',
+        "answer", ['Your answer to the first questions asked in feedback',
+                    ...,
+                    'Your answer to the last questions asked in feedback',
+                  ]
+    }}
+    """   
 
-# Need ablation of not tracing step and reset
-# Need ablation of ignoring some info in propagated feedback
-# Need to test backward across time.
+
+    # Optimization
+    optimizer.zero_feedback()
+    optimizer.backward(target, feedback)
+    if include_image:
+        response = optimizer.step(verbose=True, screenshot_list=screenshot_list, hide_intermediate_values=hide_intermediate_values)
+    else:
+        response = optimizer.step(verbose=True, hide_intermediate_values=hide_intermediate_values)
+
+    import json
+    attempt_n = 0
+    answer = None
+    while attempt_n < 2:
+        try:
+            answer = json.loads(response)["answer"]
+            break
+        except json.JSONDecodeError:
+            # Remove things outside the brackets
+            response = re.findall(r"{.*}", response, re.DOTALL)
+            if len(response) > 0:
+                response = response[0]
+            attempt_n += 1
+        except Exception:
+            attempt_n += 1
+    
+    print(answer)
+    if not (isinstance(answer, list) and isinstance(answer[0], str) and isinstance(answer[1], str)):
+        return 0
+    
+    if not ('act' in answer[0] and 'parse_answer' in answer[0] and 'step' in answer[0] and 'plan' in answer[0]):
+        return 0
+
+    if 'str0' in answer[1]:
+        return 1
+
+    else:
+        return 0
+
+
+
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Evaluation for WidowX Robot')
     parser.add_argument('--task_id', type=int, default=103)
     parser.add_argument('--horizon', type=int, default=20)
-    parser.add_argument('--rollout_horizon', type=int, default=3)
-    parser.add_argument('--n_iterations', type=int, default=50)
+    parser.add_argument('--rollout_horizon', type=int, default=1)
+    parser.add_argument("--include_image", action="store_true", help="include image observation into the optimizer prompt") 
+    parser.add_argument("--hide_intermediate_values", action="store_true", help="hide intermediate values of the optimizer prompt") 
+    parser.add_argument('--n_runs', type=int, default=5)
     args = parser.parse_args()
 
-    planner = plan
-    actor = act
+    trainable_hint = node("""
+    When deciding between actions, consider if the request can be best addressed by:
+    - the contents of the current viewport (in which case actions like clicking links, clicking buttons, or inputting text might be most appropriate) 
+    - contents found elsewhere on the full webpage (in which case actions like scrolling, summarization, or full-page Q&A might be most appropriate)
+    - on some other website entirely (in which case actions like performing a new web search might be the best option)
+    """, trainable=True)
+    parser = parse_answer
 
     TASK_ID = args.task_id
     env = TraceEnvWrapper(headless=True)
@@ -417,6 +543,11 @@ if __name__ == '__main__':
     with open(config_file, "r") as f:
         config = json.load(f)
     STEP_COUNT = 0
-    multi_step(env, config["start_url"], SITE_DESCRIPTIONS[config["sites"][0]], config["intent"], 
-               planner, actor, n_iterations=args.n_iterations, 
-               rollout_horizon=args.rollout_horizon, horizon=args.horizon)
+
+    success_count = 0
+    for i in range(args.n_runs):
+        success_count += test(env, config["start_url"], SITE_DESCRIPTIONS[config["sites"][0]], config["intent"], 
+                              trainable_hint, parser,  rollout_horizon=args.rollout_horizon, horizon=args.horizon,
+                              include_image=args.include_image, hide_intermediate_values=args.hide_intermediate_values)
+    
+    print(f'{success_count} out of {args.n_runs} answer correctly!')
