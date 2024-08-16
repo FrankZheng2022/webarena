@@ -28,7 +28,7 @@ VIEWPORT_HEIGHT = 900
 VIEWPORT_WIDTH = 1440
 
 class TraceEnvWrapper:
-    def __init__(self, headless=False, viewport_height=VIEWPORT_HEIGHT, viewport_width=VIEWPORT_WIDTH):
+    def __init__(self, horizon=20, headless=False, viewport_height=VIEWPORT_HEIGHT, viewport_width=VIEWPORT_WIDTH):
         self._env = ScriptBrowserEnv(
             headless=headless,
             slow_mo=100,
@@ -42,6 +42,7 @@ class TraceEnvWrapper:
         self._task_id = None
         self._prior_metadata_hash = None
         self._step = None
+        self._horizon = horizon
 
     def reset(self, task_id, config_file_path="./config_files"):
         self._step = 0
@@ -154,7 +155,7 @@ class TraceEnvWrapper:
         #     raise ValueError(action_description)
 
         self._step += 1
-        done = done or (self._step > 20)
+        done = done or (self._step > self._horizon)
 
         # self._page.wait_for_load_state()
         # sleep(self._page, 3)

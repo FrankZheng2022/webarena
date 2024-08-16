@@ -1,6 +1,6 @@
 from opto import trace
 from opto.trace import node, bundle, ExecutionError, Node
-from opto.optimizers import OptoPrime
+from opto.optimizers import OptoPrime, OptoPrimeNewV1, OptoPrimeNewV2
 from collections import defaultdict
 import copy
 import pickle
@@ -435,7 +435,7 @@ def rollout(user_intent, screenshot_path, som_screenshot_path, horizon,
 def test(env, start_url, site_description_prompt, user_intent, trainable_hint,
         parser, rollout_horizon=1, horizon=20, include_image=False,
         hide_intermediate_values=False):
-    optimizer = OptoPrime([trainable_hint,])# + parser.parameters())
+    optimizer = OptoPrimeNewV1([trainable_hint,])# + parser.parameters())
     error = None
     try:  # Trace the rollout; detach init_obs to avoid back-propagating across time.
         screenshot_path, som_screenshot_path = reset()
@@ -523,10 +523,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluation for WidowX Robot')
     parser.add_argument('--task_id', type=int, default=103)
     parser.add_argument('--horizon', type=int, default=20)
-    parser.add_argument('--rollout_horizon', type=int, default=1)
+    parser.add_argument('--rollout_horizon', type=int, default=3)
     parser.add_argument("--include_image", action="store_true", help="include image observation into the optimizer prompt") 
     parser.add_argument("--hide_intermediate_values", action="store_true", help="hide intermediate values of the optimizer prompt") 
-    parser.add_argument('--n_runs', type=int, default=5)
+    parser.add_argument('--n_runs', type=int, default=1)
     args = parser.parse_args()
 
     trainable_hint = node("""
