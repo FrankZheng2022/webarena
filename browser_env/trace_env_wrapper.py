@@ -155,7 +155,7 @@ class TraceEnvWrapper:
         #     raise ValueError(action_description)
 
         self._step += 1
-        done = done or (self._step > self._horizon)
+        done = done or (self._step >= self._horizon)
 
         # self._page.wait_for_load_state()
         # sleep(self._page, 3)
